@@ -291,7 +291,7 @@ function statusIn(t){if(/reject|closed|delete/.test(t))return'closed';if(/reopen
 function handle(raw,sc){
   const t=raw.toLowerCase().trim();if(!t)return;
   if(sc!==scope)setScope(sc);
-  if(matchMedia('(max-width:1180px)').matches)openAgentMobile(true);
+  if(matchMedia('(max-width:1240px)').matches)openAgentMobile(true);
   bubble(sc,'me',esc(raw));
   const ctxJob=jobOf(sc);const co=findCo(t)||ctxJob?.co;const job=co&&jobBy(co);const st=statusIn(t);
   if(st&&/(mark|move|i applied|reopen|delete|rejected)/.test(t)&&job){setStatus(job,st);
