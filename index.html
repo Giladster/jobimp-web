@@ -296,6 +296,18 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
 .vg{position:relative;display:flex;align-items:center}
 .vg span{font-size:11.5px;color:var(--faint);margin-left:70px}
 
+
+/* remove job */
+.del{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:var(--faint);flex:none;opacity:0;transition:opacity .15s}
+.del svg.i{width:15px;height:15px}
+.del:hover{color:var(--s-closed);background:var(--surface)}
+.row:hover .del,.kc:hover .del,.del:focus-visible{opacity:1}
+.kc .ft .del{width:24px;height:24px;margin:-4px -4px -4px 0}
+.dh .sbtn:hover{color:var(--s-closed)}
+.toast.act{pointer-events:auto}
+.toast .link{font-size:inherit;margin-left:8px}
+@media (hover:none){.del{opacity:1}}
+
 /* login */
 .login{position:fixed;inset:0;z-index:100;background:var(--bg);display:grid;place-items:center;padding:24px 16px}
 .lbox{width:min(420px,100%)}

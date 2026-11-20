@@ -31,7 +31,7 @@ const jobBy=co=>jobs.find(j=>j.co===co);
 const ago=h=>h<24?h+'h ago':h<48?'Yesterday':Math.floor(h/24)+'d ago';
 const I=p=>`<svg class="i" viewBox="0 0 24 24">${p}</svg>`;
 const SPARK='<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>';
-function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('on'),2200)}
+function toast(t,undo){const el=$('#toast');el.innerHTML=esc(t)+(undo?' <button class="link" data-undo>Undo</button>':'');el.classList.toggle('act',!!undo);el.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('on','act'),undo?5000:2200)}
 
 /* navigation */
 function show(v,keepScope){
@@ -54,7 +54,9 @@ function renderSide(){
   const act=jobs.filter(j=>j.status!=='closed').sort((a,b)=>ST.indexOf(b.status)-ST.indexOf(a.status));
   $('#sjobs').innerHTML=act.map(j=>`<button class="sj${view==='job'&&curJob?.id===j.id?' on':''}" data-open="${j.id}" title="${SL[j.status]}"><span class="st ${j.status}"></span><span class="nm">${esc(j.co)}</span></button>`).join('');
 }
-document.addEventListener('click',e=>{const o=e.target.closest('[data-open]');if(o){openJob(+o.dataset.open)}});
+document.addEventListener('click',e=>{const d=e.target.closest('[data-del]');if(d){e.stopPropagation();removeJob(+d.dataset.del);return}
+  if(e.target.closest('[data-undo]')){undoRemove();return}
+  const o=e.target.closest('[data-open]');if(o){openJob(+o.dataset.open)}},true);
 
 /* today */
 const hrow=(ic,t1,t2,cmd)=>`<button class="row" data-cmd="${esc(cmd)}"><span class="mini">${I(ic)}</span><div class="txt"><div class="t1">${t1}</div><div class="t2">${t2}</div></div><span class="chev">›</span></button>`;
@@ -117,14 +119,14 @@ function renderJobs(){
   if(jobsMode==='board'){
     h+=`<div class="cols">${ST.map(s=>{const js=jobs.filter(j=>j.status===s);return`<div class="col"><h4><span class="st ${s}">${SL[s]}</span><span class="c">${js.length}</span></h4>
      ${js.map(j=>`<button class="kc" data-open="${j.id}"><div class="co">${esc(j.co)}</div><div class="rl">${esc(j.role)}</div>
-     <div class="ft"><span>${j.next?j.next.split(',')[0]:j.days!=null&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':''}</span><span class="ask">Open</span></div></button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
+     <div class="ft"><span>${j.next?j.next.split(',')[0]:j.days!=null&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':''}</span>${delBtn(j)}</div></button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
      <div class="note" style="margin-top:14px">Click a card to open it. Its agent opens on the right.</div>`;
   }else{
     const js=jobs.filter(j=>j.status===jobTab);
     h+=`<div class="tabsline">${ST.map(s=>`<button class="${s===jobTab?'on':''}" data-s="${s}">${SL[s]}<span class="n">${jobs.filter(j=>j.status===s).length}</span></button>`).join('')}</div>
     ${js.length?`<div class="list" style="margin-top:4px">${js.map(j=>`<button class="row" data-open="${j.id}">${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)}</div><div class="t2">${esc(j.role)}${j.loc?' · '+esc(j.loc):''}</div>${j.next?`<div class="next">${j.next}</div>`:''}</div>
      <span class="src">${j.src}</span>
-     ${(j.status==='applied'||j.status==='interview')&&j.days!=null?`<div class="days${j.days>=10&&j.status==='applied'?' hot':''}"><div class="n">${j.days}d</div><div class="l">applied</div></div>`:'<div class="days"></div>'}<span class="chev">›</span></button>`).join('')}</div>`:`<div class="empty">Nothing here yet.</div>`}`;
+     ${(j.status==='applied'||j.status==='interview')&&j.days!=null?`<div class="days${j.days>=10&&j.status==='applied'?' hot':''}"><div class="n">${j.days}d</div><div class="l">applied</div></div>`:'<div class="days"></div>'}${delBtn(j)}<span class="chev">›</span></button>`).join('')}</div>`:`<div class="empty">Nothing here yet.</div>`}`;
   }
   $('#page').innerHTML=h;
 }
@@ -146,7 +148,7 @@ function renderJob(){
   else if(j.status==='closed')n=`I can show what to change for similar roles.`;
   else n=`I can compare this offer with market pay.`;
   $('#page').innerHTML=`<button class="back" data-back>‹ My jobs</button>
-  <div class="dh">${av(j.co,'lg')}<div style="flex:1"><h2>${esc(j.role)}</h2><div class="t2">${esc(j.co)}${j.loc?' · '+esc(j.loc):''} · <span class="src">${j.src}</span></div></div></div>
+  <div class="dh">${av(j.co,'lg')}<div style="flex:1"><h2>${esc(j.role)}</h2><div class="t2">${esc(j.co)}${j.loc?' · '+esc(j.loc):''} · <span class="src">${j.src}</span></div></div><button class="sbtn" data-del="${j.id}" title="Remove this job" aria-label="Remove this job">${I(IC_TRASH)}</button></div>
   <div class="tabsline" style="margin-top:26px">${ST.map(s=>`<button class="${s===j.status?'on':''}" data-st="${s}">${SL[s]}</button>`).join('')}</div>
   <div class="grid2" style="margin-top:26px">
     <div>${j.days!=null&&j.status!=='saved'?`<div class="count"><b>${j.days}</b>days since you applied</div><div style="margin-top:8px">${track(j,false)}${axis}</div>`:j.since?`<div class="count">In touch since ${esc(j.since)}. Apply date not in your email.</div>`:`<div class="count">Not applied yet. Apply early: replies drop after day 2.</div>`}
@@ -364,9 +366,9 @@ function loadReal(data){
   const r=jobs.filter(j=>j.replied!=null).map(j=>j.replied).sort((a,b)=>a-b);
   const q=f=>r.length?r[Math.min(r.length-1,Math.floor(f*r.length))]:7;
   const band=[q(.25),median(r)??7,q(.75)];REPLY={};jobs.forEach(j=>REPLY[j.co]=band);
-  jobTab='interview';
+  jobTab='interview';applyHidden();
 }
-function loadDemo(){REAL=false;jobs=DEMO_JOBS.map(j=>({...j,tl:[...j.tl]}));alerts=DEMO_ALERTS.map(a=>({...a}));recordings=[...DEMO_RECS];REPLY=DEMO_REPLY;jobTab='applied'}
+function loadDemo(){REAL=false;jobs=DEMO_JOBS.map(j=>({...j,tl:[...j.tl]}));alerts=DEMO_ALERTS.map(a=>({...a}));recordings=[...DEMO_RECS];REPLY=DEMO_REPLY;jobTab='applied';applyHidden()}
 function realStats(){
   const ap=jobs.filter(j=>j.applied),rep=ap.filter(j=>j.firstReply);
   return{ap,rate:ap.length?Math.round(rep.length/ap.length*100):0,med:median(rep.map(j=>j.replied)),
@@ -468,3 +470,25 @@ function visualTimeline(j){
   });
   return `<div class="vtl">${h}</div>`;
 }
+
+/* remove a job (trash). Saved per account in this browser only. */
+const IC_TRASH='<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>';
+const delBtn=j=>`<span class="del" role="button" tabindex="0" data-del="${j.id}" title="Remove this job" aria-label="Remove ${esc(j.co)}">${I(IC_TRASH)}</span>`;
+const jkey=j=>j.co+'|'+j.role;
+const hidKey=()=>'jobimp-removed-'+(REAL?'gilad':'demo');
+function hidList(){try{return JSON.parse(localStorage.getItem(hidKey())||'[]')}catch{return[]}}
+function hidSave(l){try{localStorage.setItem(hidKey(),JSON.stringify(l))}catch{}}
+function applyHidden(){const h=new Set(hidList());jobs=jobs.filter(j=>!h.has(jkey(j)))}
+let lastRemoved=null;
+function removeJob(id){
+  const i=jobs.findIndex(j=>j.id===id);if(i<0)return;const j=jobs[i];
+  jobs.splice(i,1);lastRemoved={j,i};hidSave([...new Set([...hidList(),jkey(j)])]);
+  if(view==='job'&&curJob?.id===id)show('jobs');else render();
+  toast(`${j.co} removed`,true);
+}
+function undoRemove(){
+  if(!lastRemoved)return;const{j,i}=lastRemoved;lastRemoved=null;
+  jobs.splice(Math.min(i,jobs.length),0,j);hidSave(hidList().filter(k=>k!==jkey(j)));
+  render();toast(`${j.co} is back`);
+}
+document.addEventListener('keydown',e=>{const d=e.target.closest?.('[data-del]');if(d&&(e.key==='Enter'||e.key===' ')){e.preventDefault();e.stopPropagation();removeJob(+d.dataset.del)}},true);
