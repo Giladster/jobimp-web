@@ -51,7 +51,7 @@ $('#nav').onclick=e=>{const b=e.target.closest('.nv');if(b)show(b.dataset.v)};
 function renderSide(){
   $('#foundCt').textContent=alerts.filter(a=>a.tag!=='applied').length||'';
   $('#jobsCt').textContent=jobs.filter(j=>j.status!=='closed').length;
-  const act=jobs.filter(j=>j.status!=='closed').sort((a,b)=>ST.indexOf(b.status)-ST.indexOf(a.status));
+  const act=jobs.filter(j=>j.status==='interview'||j.status==='offer').sort((a,b)=>ST.indexOf(b.status)-ST.indexOf(a.status));
   $('#sjobs').innerHTML=act.map(j=>`<button class="sj${view==='job'&&curJob?.id===j.id?' on':''}" data-open="${j.id}" title="${SL[j.status]}"><span class="st ${j.status}"></span><span class="nm">${esc(j.co)}</span></button>`).join('');
 }
 document.addEventListener('click',e=>{const d=e.target.closest('[data-del]');if(d){e.stopPropagation();removeJob(+d.dataset.del);return}
