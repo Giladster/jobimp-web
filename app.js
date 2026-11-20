@@ -1,5 +1,5 @@
 const ST=['saved','applied','interview','offer','closed'];
-const SL={saved:'Saved',applied:'Applied',interview:'Interview',offer:'Offer',closed:'Closed'};
+const SL={saved:'Saved',applied:'Awaiting reply',interview:'Interview',offer:'Offer',closed:'Closed'};
 const SOURCES=['All','LinkedIn','Company site','Drushim','AllJobs'];
 const DEMO_JOBS=[
  {id:1,co:'Wix',role:'Product Manager, Editor',loc:'Tel Aviv',src:'LinkedIn',status:'applied',days:10,tl:[['Nov 5','Applied via LinkedIn'],['Nov 4','Added from Found']]},
