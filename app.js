@@ -1,7 +1,7 @@
 const ST=['saved','applied','interview','offer','closed'];
 const SL={saved:'Saved',applied:'Applied',interview:'Interview',offer:'Offer',closed:'Closed'};
 const SOURCES=['All','LinkedIn','Company site','Drushim','AllJobs'];
-let jobs=[
+const DEMO_JOBS=[
  {id:1,co:'Wix',role:'Product Manager, Editor',loc:'Tel Aviv',src:'LinkedIn',status:'applied',days:10,tl:[['Nov 5','Applied via LinkedIn'],['Nov 4','Added from Found']]},
  {id:2,co:'Monday.com',role:'Senior PM, Automations',loc:'Tel Aviv',src:'Company site',status:'interview',days:14,replied:4,next:'Tue 10:00, 2nd round',tl:[['Nov 15','Moved to Interview from a Gmail invite'],['Nov 12','1st round with Noa, PM lead'],['Nov 1','Applied on company site']]},
  {id:3,co:'Riskified',role:'Product Manager, Payments',loc:'Tel Aviv',src:'Company site',status:'applied',days:3,tl:[['Nov 12','Applied on company site']]},
@@ -9,7 +9,7 @@ let jobs=[
  {id:5,co:'Gong',role:'Product Manager, AI',loc:'Ramat Gan',src:'AllJobs',status:'saved',tl:[['Nov 13','Added by voice']]},
  {id:6,co:'Playtika',role:'Product Manager, LiveOps',loc:'Herzliya',src:'Drushim',status:'closed',days:21,replied:13,tl:[['Nov 9','Rejected by email'],['Oct 25','Applied']]},
 ];
-let alerts=[
+const DEMO_ALERTS=[
  {id:'a1',co:'Similarweb',role:'Product Manager, Growth',loc:'Tel Aviv',hrs:1,src:'Company site',tag:'new'},
  {id:'a2',co:'Fiverr',role:'PM, Buyer Experience',loc:'Tel Aviv',hrs:2,src:'Company site',tag:'new'},
  {id:'a3',co:'Check Point',role:'PM, Cloud Security',loc:'Tel Aviv',hrs:3,src:'Drushim',tag:'new'},
@@ -18,7 +18,9 @@ let alerts=[
  {id:'a6',co:'Wix',role:'Product Manager, Editor',loc:'Tel Aviv',hrs:30,src:'LinkedIn',tag:'applied'},
  {id:'a7',co:'Taboola',role:'Product Manager, Ads',loc:'Tel Aviv',hrs:52,src:'AllJobs',tag:'new'},
 ];
-let recordings=[{id:'r1',co:'Monday.com',label:'1st round with Noa',date:'Nov 12',mins:42,score:74}];
+const DEMO_RECS=[{id:'r1',co:'Monday.com',label:'1st round with Noa',date:'Nov 12',mins:42,score:74}];
+let jobs=[],alerts=[],recordings=[],REAL=false,REPLY={};
+const DEMO_REPLY={Wix:[4,6,8],Riskified:[3,5,7],'Monday.com':[2,4,6],Playtika:[8,12,16],Gong:[5,9,13],Lemonade:[3,6,9],Fiverr:[3,5,8],Similarweb:[3,5,7]};
 let view='today',jobsMode='list',jobTab='applied',srcTab='All',curJob=null,scope='main',recMode=0;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -56,6 +58,7 @@ document.addEventListener('click',e=>{const o=e.target.closest('[data-open]');if
 /* today */
 const hrow=(ic,t1,t2,cmd)=>`<button class="row" data-cmd="${esc(cmd)}"><span class="mini">${I(ic)}</span><div class="txt"><div class="t1">${t1}</div><div class="t2">${t2}</div></div><span class="chev">›</span></button>`;
 function renderToday(){
+  if(REAL)return renderTodayReal();
   const nNew=alerts.filter(a=>a.tag==='new').length;
   $('#page').innerHTML=`<div class="hero"><div class="d">Monday, November 16</div><h2>Good morning, Gilad.</h2><p>Here’s what changed since yesterday.</p></div>
   <div class="kpis">
@@ -77,6 +80,7 @@ function renderToday(){
 
 /* found */
 function renderAlerts(){
+  if(REAL){$('#page').innerHTML=`<div class="ph"><h1>Found today</h1></div><div class="empty">Job alerts are not set up for your account yet.<br>Your real jobs are in My jobs.</div>`;return}
   const list=alerts.filter(a=>srcTab==='All'||a.src===srcTab).sort((a,b)=>a.hrs-b.hrs);
   let h=`<div class="ph"><h1>Found today</h1></div>
   <div class="prefs"><span>Product Manager · Tel Aviv · Mid–Senior</span><button class="link" data-f>Edit filters</button></div>
@@ -112,14 +116,14 @@ function renderJobs(){
   if(jobsMode==='board'){
     h+=`<div class="cols">${ST.map(s=>{const js=jobs.filter(j=>j.status===s);return`<div class="col"><h4><span class="st ${s}">${SL[s]}</span><span class="c">${js.length}</span></h4>
      ${js.map(j=>`<button class="kc" data-open="${j.id}"><div class="co">${esc(j.co)}</div><div class="rl">${esc(j.role)}</div>
-     <div class="ft"><span>${j.next?j.next.split(',')[0]:j.days&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':''}</span><span class="ask">Open</span></div></button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
+     <div class="ft"><span>${j.next?j.next.split(',')[0]:j.days!=null&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':''}</span><span class="ask">Open</span></div></button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
      <div class="note" style="margin-top:14px">Click a card to open it. Its agent opens on the right.</div>`;
   }else{
     const js=jobs.filter(j=>j.status===jobTab);
     h+=`<div class="tabsline">${ST.map(s=>`<button class="${s===jobTab?'on':''}" data-s="${s}">${SL[s]}<span class="n">${jobs.filter(j=>j.status===s).length}</span></button>`).join('')}</div>
-    ${js.length?`<div class="list" style="margin-top:4px">${js.map(j=>`<button class="row" data-open="${j.id}">${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)}</div><div class="t2">${esc(j.role)} · ${esc(j.loc)}</div>${j.next?`<div class="next">${j.next}</div>`:''}</div>
+    ${js.length?`<div class="list" style="margin-top:4px">${js.map(j=>`<button class="row" data-open="${j.id}">${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)}</div><div class="t2">${esc(j.role)}${j.loc?' · '+esc(j.loc):''}</div>${j.next?`<div class="next">${j.next}</div>`:''}</div>
      <span class="src">${j.src}</span>
-     ${j.status==='applied'||j.status==='interview'?`<div class="days${j.days>=10&&j.status==='applied'?' hot':''}"><div class="n">${j.days}d</div><div class="l">applied</div></div>`:'<div class="days"></div>'}<span class="chev">›</span></button>`).join('')}</div>`:`<div class="empty">Nothing here yet.</div>`}`;
+     ${(j.status==='applied'||j.status==='interview')&&j.days!=null?`<div class="days${j.days>=10&&j.status==='applied'?' hot':''}"><div class="n">${j.days}d</div><div class="l">applied</div></div>`:'<div class="days"></div>'}<span class="chev">›</span></button>`).join('')}</div>`:`<div class="empty">Nothing here yet.</div>`}`;
   }
   $('#page').innerHTML=h;
 }
@@ -133,17 +137,18 @@ $('#page').addEventListener('click',e=>{
 function openJob(id){const j=jobs.find(x=>x.id===id);if(!j)return;curJob=j;show('job');openAgentMobile(false)}
 function renderJob(){
   const j=curJob;let n;
-  if(j.status==='applied'&&j.days>=7)n=`No reply in ${j.days} days. ${esc(j.co)} usually replies in 6. A short follow-up could help.`;
+  if(REAL)n=realNudge(j);
+  else if(j.status==='applied'&&j.days>=7)n=`No reply in ${j.days} days. ${esc(j.co)} usually replies in 6. A short follow-up could help.`;
   else if(j.status==='applied')n=`${esc(j.co)} usually replies in 5 days. I'll tell you if nothing comes.`;
   else if(j.status==='interview')n=`2nd round Tuesday at 10:00. Last time you talked 68% of the time.`;
   else if(j.status==='saved')n=`Not applied yet. Want me to tailor your CV keywords first?`;
   else if(j.status==='closed')n=`I can show what to change for similar roles.`;
   else n=`I can compare this offer with market pay.`;
   $('#page').innerHTML=`<button class="back" data-back>‹ My jobs</button>
-  <div class="dh">${av(j.co,'lg')}<div style="flex:1"><h2>${esc(j.role)}</h2><div class="t2">${esc(j.co)} · ${esc(j.loc)} · <span class="src">${j.src}</span></div></div></div>
+  <div class="dh">${av(j.co,'lg')}<div style="flex:1"><h2>${esc(j.role)}</h2><div class="t2">${esc(j.co)}${j.loc?' · '+esc(j.loc):''} · <span class="src">${j.src}</span></div></div></div>
   <div class="tabsline" style="margin-top:26px">${ST.map(s=>`<button class="${s===j.status?'on':''}" data-st="${s}">${SL[s]}</button>`).join('')}</div>
   <div class="grid2" style="margin-top:26px">
-    <div>${j.days&&j.status!=='saved'?`<div class="count"><b>${j.days}</b>days since you applied</div><div style="margin-top:8px">${track(j,false)}${axis}</div>`:`<div class="count">Not applied yet. Apply early: replies drop after day 2.</div>`}
+    <div>${j.days!=null&&j.status!=='saved'?`<div class="count"><b>${j.days}</b>days since you applied</div><div style="margin-top:8px">${track(j,false)}${axis}</div>`:j.since?`<div class="count">In touch since ${esc(j.since)}. Apply date not in your email.</div>`:`<div class="count">Not applied yet. Apply early: replies drop after day 2.</div>`}
       <div class="lbl">Timeline</div><div class="list tl">${j.tl.map(t=>`<div class="row"><span class="d">${t[0]}</span><span class="x">${esc(t[1])}</span></div>`).join('')}</div></div>
     <div><button class="nudge" data-cmd="${esc(jobChips(j)[0])}"><span class="spark">${I(SPARK)}</span><div class="txt">${n}<div class="more">${esc(jobChips(j)[0])} →</div></div></button>
       <div class="lbl">Actions</div><div class="list">
@@ -163,7 +168,7 @@ function setStatus(j,s){if(j.status===s)return;j.status=s;if(s==='applied')j.day
 /* interviews */
 let recT=null,recS=0;
 function renderInterview(){
-  const opts=jobs.filter(j=>j.status!=='closed').map(j=>`<option${j.co==='Monday.com'?' selected':''}>${esc(j.co)}</option>`).join('');
+  const opts=jobs.filter(j=>j.status!=='closed').map(j=>`<option${j.co===(REAL?'':'Monday.com')?' selected':''}>${esc(j.co)}</option>`).join('');
   $('#page').innerHTML=`<div class="ph"><h1>Interviews</h1></div>
   <div class="grid2"><div class="recbox">
     <div class="recopts"><select id="jobSel" aria-label="Job">${opts}</select><span style="color:var(--faint)">·</span>${['In person','Zoom'].map((m,i)=>`<button class="${i===recMode?'on':''}" data-rm="${i}">${m}</button>`).join('')}</div>
@@ -216,7 +221,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();openAg
   if(e.key==='/'&&document.activeElement.tagName!=='INPUT'&&document.activeElement.tagName!=='SELECT'){e.preventDefault();openAgentMobile(true);$('#inp').focus()}});
 
 /* where you stand */
-const REPLY={Wix:[4,6,8],Riskified:[3,5,7],'Monday.com':[2,4,6],Playtika:[8,12,16],Gong:[5,9,13],Lemonade:[3,6,9],Fiverr:[3,5,8],Similarweb:[3,5,7]};
 const MAXD=16,pc=d=>Math.min(d,MAXD)/MAXD*100;
 function track(j,name){
   const r=REPLY[j.co]||[4,7,10];let cls='',d=j.days;
@@ -243,6 +247,7 @@ function barChart(){
   return`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Applications per week">${g}</svg>`;
 }
 function renderStats(){
+  if(REAL)return renderStatsReal();
   $('#page').innerHTML=`<div class="ph"><h1>Stats</h1></div><div class="kpis" style="margin-top:0">
     <div class="kpi"><div class="l">Applied this month</div><div class="v">12</div><div class="d">4 more than October</div></div>
     <div class="kpi"><div class="l">Reply rate</div><div class="v">33%</div><div class="d">Average is 24%</div></div>
@@ -263,15 +268,16 @@ function bubble(sc,cls,html){const t=thread(sc);const d=document.createElement('
 function acts(list){return list?`<div class="acts">${list.map((a,i)=>`<button class="act${i===0?' pri':''}" data-cmd="${esc(a[1])}">${esc(a[0])}</button>`).join('')}</div>`:''}
 function say(sc,html,list,extra){bubble(sc,'bot',html+(extra||'')+acts(list))}
 function reply(sc,html,list,extra){const t=bubble(sc,'bot typing','<i></i><i></i><i></i>');setTimeout(()=>{t.remove();say(sc,html,list,extra);render()},600)}
+const REAL_CHIPS={today:['What needs my attention?','Which companies reply fastest?'],alerts:[],jobs:['What needs my attention?','Which companies reply fastest?'],interview:['What needs my attention?'],stats:['Which companies reply fastest?']};
 const CHIPS={today:['What needs my attention?','Which companies reply fastest?'],alerts:['Which job fits me best?','Why is AppsFlyer flagged?','Skip all reposts','Add Similarweb'],
   jobs:['What needs my attention?','Move Riskified to interview'],interview:['Prep Monday.com','What do I repeat most?'],stats:['Best time to apply','Which companies reply fastest?']};
 function jobChips(j){return{saved:['Tailor my CV','I applied','Who’s hiring there?'],applied:['Draft a follow-up','Move to interview','Mark rejected'],
   interview:['Prep me for the next round','Salary range?','Move to offer'],offer:['Is this a good offer?','Help me negotiate'],closed:['What went wrong?','Find similar jobs','Reopen']}[j.status]}
-function renderSugg(){const j=jobOf(scope);const l=j?jobChips(j):CHIPS[view]||[];$('#sugg').innerHTML=l.slice(0,4).map(c=>`<button data-cmd="${esc(c)}">${esc(c)}</button>`).join('')}
+function renderSugg(){const j=jobOf(scope);const l=j?jobChips(j):(REAL?REAL_CHIPS[view]:CHIPS[view])||[];$('#sugg').innerHTML=l.slice(0,4).map(c=>`<button data-cmd="${esc(c)}">${esc(c)}</button>`).join('')}
 function intro(sc){
   const j=jobOf(sc);
   say(sc,j?`I'm following ${esc(j.co)} for you. ${SL[j.status]}${j.days&&j.status!=='saved'?`, ${j.days} days since you applied`:''}. Ask anything, or tell me what to do.`
-   :`I watch your search all day. Ask anything, or tell me what to do. I always ask before I send anything.`);
+   :REAL?`I read your Gmail and calendar to track your jobs. Read only: I never send, edit or delete anything.`:`I watch your search all day. Ask anything, or tell me what to do. I always ask before I send anything.`);
 }
 function setScope(sc){scope=sc;const box=$('#threadBox');box.innerHTML='';box.appendChild(thread(sc));thread(sc).scrollTop=1e5;$('#composer').dataset.scope=sc;renderABar();renderSugg()}
 function renderABar(){
@@ -304,9 +310,11 @@ function handle(raw,sc){
   if(/flagged|repost/.test(t)){reply(sc,'AppsFlyer posted the same job 3 times since August. 9 users applied and none got a reply.');return}
   if(/fits me best/.test(t)){reply(sc,'Similarweb, Growth. Posted 1 hour ago on their own site, and they reply in about 5 days.',[['Add it','Add Similarweb']]);return}
   if(/follow/.test(t)&&job){reply(sc,`A follow-up for ${esc(job.co)}. I'll send it only when you approve.`,[['Approve and send','send follow-up '+job.co],['Shorter','shorter']],
-    `<div class="draft">Hi Maya,\nI applied for the ${esc(job.role)} role and wanted to check in. I'm still very interested.\nThanks,\nGilad</div>`);return}
+    `<div class="draft">Hi${REAL?'':' Maya'},\nI applied for the ${esc(job.role)} role and wanted to check in. I'm still very interested.\nThanks,\nGilad</div>`);return}
+  if(/^send follow-up/.test(t)&&job&&REAL){reply(sc,'I never send from your Gmail. Copy the draft and send it yourself.');return}
   if(/^send follow-up/.test(t)&&job){job.tl.unshift(['Today','Follow-up sent']);reply(sc,'Sent from your Gmail. I’ll tell you when they reply.');return}
   if(/shorter/.test(t)){reply(sc,'Shorter:',null,'<div class="draft">Hi Maya, checking in on my application. Still very interested. Thanks, Gilad</div>');return}
+  if(REAL&&/(prep|salary|cv|negotiate|good offer|hiring there|went wrong|similar|repeat most|best time|^mock$|flagged|repost|fits me best|^add|save )/.test(t)){reply(sc,'That part still runs on sample data, so I won’t guess for your real account yet.');return}
   if(/prep/.test(t)){const c=job?job.co:'Monday.com';reply(sc,`For ${esc(c)} on Tuesday:<br>1. Pause after each answer. You talked 68% last time.<br>2. Others were asked: "A metric dropped 20%. What do you do?"<br>3. Ask about team size.`,[['Practice a question','mock']]);return}
   if(t==='mock'){reply(sc,'"How do you pick what to build next?" Answer by voice or text.');return}
   if(/cv/.test(t)){reply(sc,`For ${esc(co||'this job')} I'd add: A/B testing, B2B SaaS, SQL. I'll show you the changes first.`);return}
@@ -315,6 +323,8 @@ function handle(raw,sc){
   if(/hiring there|who/.test(t)){reply(sc,`${esc(co||'They')} hired 3 PMs this year. I can find the hiring manager.`);return}
   if(/went wrong/.test(t)){reply(sc,'You talked 74% of the time and skipped a metrics question. Practice that.');return}
   if(/similar/.test(t)){reply(sc,'2 similar jobs in Found: Similarweb and Check Point.',[['Show me','go:alerts']]);return}
+  if(REAL&&/attention/.test(t)){reply(sc,attentionList().map((a,i)=>`${i+1}. ${esc(a[0])}`).join('<br>')||'Nothing urgent right now.');return}
+  if(REAL&&/fastest/.test(t)){reply(sc,fastest());return}
   if(/attention/.test(t)){reply(sc,'1. Wix is quiet for 10 days.<br>2. Monday.com interview on Tuesday.<br>3. Lemonade saved 5 days, not applied.',[['Follow up Wix','Follow up Wix']]);return}
   if(/repeat most/.test(t)){reply(sc,'You say "basically" a lot and start with background. Lead with the result.');return}
   if(/best time/.test(t)){reply(sc,'In the first 2 days after a post. Your reply rate: 41% then, 12% after a week.');return}
@@ -333,4 +343,97 @@ $('#composer').onsubmit=e=>{e.preventDefault();const v=$('#inp').value;$('#inp')
 $('#mic').onclick=e=>{const m=e.currentTarget;if(m.classList.contains('rec'))return;m.classList.add('rec');$('#inp').placeholder='Listening…';
   setTimeout(()=>{m.classList.remove('rec');$('#inp').placeholder='Ask or tell me anything';handle('Add Similarweb',scope)},1400)};
 
-setScope('main');render();
+
+/* accounts: demo (sample data) or Gilad (real data from Gmail + calendar, read only) */
+const DAY=864e5,TODAY=new Date(new Date().toDateString());
+const dt=d=>new Date(d+'T00:00:00');
+const fmt=d=>dt(d).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+const daysBetween=(a,b)=>Math.round((dt(b)-dt(a))/DAY);
+const median=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
+function loadReal(data){
+  REAL=true;alerts=[];recordings=[];
+  const iso=TODAY.toISOString().slice(0,10);
+  jobs=data.jobs.map((j,i)=>({id:i+1,co:j.co,role:j.role,loc:j.loc||'',src:j.src||'Email',status:j.status,next:j.next||null,
+    applied:j.applied,firstReply:j.firstReply,tl:j.tl,
+    days:j.applied?daysBetween(j.applied,iso):null,
+    replied:j.applied&&j.firstReply?daysBetween(j.applied,j.firstReply):null,
+    since:!j.applied&&j.firstReply?fmt(j.firstReply):null}));
+  const r=jobs.filter(j=>j.replied!=null).map(j=>j.replied).sort((a,b)=>a-b);
+  const q=f=>r.length?r[Math.min(r.length-1,Math.floor(f*r.length))]:7;
+  const band=[q(.25),median(r)??7,q(.75)];REPLY={};jobs.forEach(j=>REPLY[j.co]=band);
+  jobTab='interview';
+}
+function loadDemo(){REAL=false;jobs=DEMO_JOBS.map(j=>({...j,tl:[...j.tl]}));alerts=DEMO_ALERTS.map(a=>({...a}));recordings=[...DEMO_RECS];REPLY=DEMO_REPLY;jobTab='applied'}
+function realStats(){
+  const ap=jobs.filter(j=>j.applied),rep=ap.filter(j=>j.firstReply);
+  return{ap,rate:ap.length?Math.round(rep.length/ap.length*100):0,med:median(rep.map(j=>j.replied)),
+    waiting:jobs.filter(j=>j.status==='applied'),inter:jobs.filter(j=>j.status==='interview'),
+    everInter:jobs.filter(j=>j.tl.some(t=>/interview|first call/i.test(t[1]))).length};
+}
+function attentionList(){
+  const out=[];
+  jobs.filter(j=>j.next).forEach(j=>out.push([`${j.co} interview ${j.next}`,'go:open:'+j.id]));
+  jobs.filter(j=>j.status==='interview'&&!j.next).forEach(j=>{const last=j.tl[0][0];out.push([`${j.co} is quiet since ${last}. Follow up?`,'go:open:'+j.id])});
+  realStats().waiting.filter(j=>j.days>=21).sort((a,b)=>b.days-a.days).forEach(j=>out.push([`${j.co}: no reply in ${j.days} days`,'go:open:'+j.id]));
+  return out;
+}
+function fastest(){
+  const r=jobs.filter(j=>j.replied!=null).sort((a,b)=>a.replied-b.replied);
+  return r.slice(0,4).map(j=>`${esc(j.co)} in ${j.replied} day${j.replied===1?'':'s'}`).join(', ')+'.'+(r.length>4?` Slowest: ${esc(r.at(-1).co)}, ${r.at(-1).replied} days.`:'');
+}
+function realNudge(j){
+  if(j.status==='interview')return j.next?`Next: ${esc(j.next)}. Want help to prep?`:`No news since ${esc(j.tl[0][0])}. A short follow-up could help.`;
+  if(j.status==='applied')return `No reply in ${j.days} days.${j.days>=21?' Half the companies that answered you did it within '+(median(jobs.filter(x=>x.replied!=null).map(x=>x.replied))??7)+' days.':''}`;
+  if(j.status==='closed')return j.replied!=null?`They answered on day ${j.replied}.`:`Closed. I can show what to change for similar roles.`;
+  return 'Ask me anything about this job.';
+}
+function kpi(l,v,d){return`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`}
+function renderTodayReal(){
+  const S=realStats(),att=attentionList();
+  const nx=S.inter.find(j=>j.next);
+  $('#page').innerHTML=`<div class="hero"><div class="d">${TODAY.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div><h2>Hi, Gilad.</h2><p>Your real job search, from Gmail and calendar.</p></div>
+  <div class="kpis">${kpi('In interviews',S.inter.length,nx?esc(nx.co)+' '+esc(nx.next.split(',')[0]):'')}${kpi('Waiting on reply',S.waiting.length,'No answer yet')}
+  ${kpi('Reply rate',S.rate+'%',`${S.ap.filter(j=>j.firstReply).length} of ${S.ap.length} applications`)}${kpi('Days to reply',S.med??'–','Median')}</div>
+  <div class="grid2"><div><div class="lbl">Needs attention</div><div class="list">
+   ${att.map(a=>hrow('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',esc(a[0]),'Open the job',a[1])).join('')||'<div class="empty">Nothing urgent.</div>'}</div></div>
+  <div><div class="lbl">Where you stand</div>${legend}${S.waiting.filter(j=>j.days!=null).sort((a,b)=>a.days-b.days).map(j=>track(j)).join('')}${axis}
+  <div class="foot">Band = when companies usually answered you.</div></div></div>`;
+}
+function renderStatsReal(){
+  const S=realStats();
+  const wk=[];for(let i=7;i>=0;i--){const end=new Date(TODAY-i*7*DAY),start=new Date(end-6*DAY);
+    wk.push([`${start.getMonth()+1}/${start.getDate()}`,S.ap.filter(j=>{const d=dt(j.applied);return d>=start&&d<=end}).length])}
+  const W=380,H=150,y0=122,max=Math.max(3,...wk.map(w=>w[1])),bw=18,step=W/wk.length,y=v=>y0-(v/max)*(y0-12);
+  let g=`<line class="grid" x1="0" x2="${W}" y1="${y0}" y2="${y0}"/>`;
+  wk.forEach(([l,v],i)=>{const cx=step*i+step/2,top=y(v);
+    if(v)g+=`<path class="bar" d="M${cx-bw/2},${y0} V${top+3} q0,-3 3,-3 h${bw-6} q3,0 3,3 V${y0}Z"><title>Week of ${l}: ${v} applications</title></path><text class="vl" x="${cx}" y="${top-7}" text-anchor="middle">${v}</text>`;
+    g+=`<text x="${cx}" y="${y0+16}" text-anchor="middle">${l}</text>`});
+  const replied=jobs.filter(j=>j.replied!=null).sort((a,b)=>a.replied-b.replied);
+  $('#page').innerHTML=`<div class="ph"><h1>Stats</h1></div><div class="kpis" style="margin-top:0">
+    ${kpi('Applications',S.ap.length,'With a known date')}${kpi('Reply rate',S.rate+'%','Any answer, yes or no')}${kpi('Days to reply',S.med??'–','Median')}${kpi('Got interviews',S.everInter,'Companies')}</div>
+  <div class="grid2"><div><div class="lbl">Applications per week</div><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Applications per week">${g}</svg></div>
+  <div><div class="lbl">How fast they answered</div>${legend}${replied.map(j=>track(j)).join('')}${axis}</div></div>
+  <div class="foot">From your Gmail and calendar. Read only. Nothing was changed.</div>`;
+}
+
+/* login */
+function startApp(){
+  $('#login').hidden=true;$('#meName').textContent=REAL?'Gilad':'Demo account';
+  view='today';curJob=null;for(const k in threads)delete threads[k];
+  setScope('main');show('today');
+}
+function showLogin(){$('#login').hidden=false;$('#pwRow').hidden=true;$('#loginErr').textContent='';}
+$('#login').addEventListener('click',async e=>{
+  if(e.target.closest('[data-acc="demo"]')){loadDemo();startApp();return}
+  if(e.target.closest('[data-acc="gilad"]')){$('#pwRow').hidden=false;$('#pw').focus();return}
+});
+$('#pwRow').onsubmit=async e=>{
+  e.preventDefault();const err=$('#loginErr');err.textContent='Checking…';
+  try{const r=await fetch('/api/my-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('#pw').value})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){err.textContent=d.error||'Could not sign in.';return}
+    $('#pw').value='';loadReal(d);startApp();
+  }catch{err.textContent='Could not reach the backend.'}
+};
+document.addEventListener('click',e=>{if(e.target.closest('[data-switch]')){closeModal();openAgentMobile(false);showLogin()}});
+showLogin();

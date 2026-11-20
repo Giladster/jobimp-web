@@ -277,12 +277,28 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
   .jr .meta{display:none}
   .hero h2{font-size:27.6px}
 }
+
+/* login */
+.login{position:fixed;inset:0;z-index:100;background:var(--bg);display:grid;place-items:center;padding:24px 16px}
+.lbox{width:min(420px,100%)}
+.lbox .logo{padding:0 0 28px;font-size:27px}
+.lbox h1{font-family:var(--h);font-weight:700;font-size:23px;letter-spacing:-.02em;margin:0 0 6px}
+.lbox p{margin:0 0 26px;color:var(--muted);font-size:15px}
+.acc{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:16px;border-radius:14px;background:var(--surface);margin-bottom:10px}
+.acc:hover{background:var(--surface2)}
+.acc .txt{flex:1}
+.pw{display:flex;gap:8px;margin:4px 0 0}
+.pw input{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:10px 14px;font:inherit;font-size:15px}
+.lerr{min-height:20px;font-size:13.8px;color:var(--s-closed);margin-top:10px}
+.lnote{font-size:12.6px;color:var(--faint);margin-top:18px;line-height:1.5}
+.sw{border:0;background:none;color:var(--faint)}
+.sw:hover{color:var(--ink)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head>
 <body>
 <div class="app">
   <aside class="side">
-    <div class="logo">Job<span>Imp</span></div>
+    <button class="logo" data-switch title="Switch account">Job<span>Imp</span></button>
     <nav class="navl" id="nav">
       <button class="nv on" data-v="today"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>Today</button>
       <button class="nv" data-v="alerts"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>Found<span class="ct" id="foundCt"></span></button>
@@ -292,7 +308,7 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
     </nav>
     <div class="sideh">Active jobs</div>
     <div class="sjobs" id="sjobs"></div>
-    <div class="me"><div class="av sm">G</div>Gilad<span class="wa" title="Alerts also go to WhatsApp">● WhatsApp</span></div>
+    <div class="me"><div class="av sm">G</div><span id="meName">Gilad</span><button class="wa sw" data-switch title="Switch account">Switch</button></div>
   </aside>
 
   <main class="main" id="main"><div class="wrap" id="page"></div></main>
@@ -312,6 +328,19 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
 <div class="scrim" id="scrim"></div>
 <div class="modal" id="modal"><div class="mbar"><div class="t1" id="mTitle"></div><button class="done" data-close>Close</button></div><div class="mbody" id="mBody"></div></div>
 <div class="toast" id="toast"></div>
+<div class="login" id="login" hidden>
+  <div class="lbox">
+    <div class="logo">Job<span>Imp</span></div>
+    <h1>Choose an account</h1>
+    <p>Pick the sample data or your real job search.</p>
+    <button class="acc" data-acc="gilad"><div class="av">G</div><div class="txt"><div class="t1">Gilad</div><div class="t2">Real data from your Gmail and calendar</div></div><span class="chev">›</span></button>
+    <form class="pw" id="pwRow" hidden><input id="pw" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password"><button class="pbtn pri">Sign in</button></form>
+    <div class="lerr" id="loginErr" role="status"></div>
+    <button class="acc" data-acc="demo"><div class="av">D</div><div class="txt"><div class="t1">Demo account</div><div class="t2">Sample jobs, nothing real</div></div><span class="chev">›</span></button>
+    <div class="lnote">Gmail and calendar are read only. JobImp never sends, edits or deletes anything.</div>
+  </div>
+</div>
+
 
 <script src="app.js"></script>
 </body></html>

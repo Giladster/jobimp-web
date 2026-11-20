@@ -14,3 +14,7 @@ node_modules/
 .vscode/
 .idea/
 *.log
+
+# Real user data: never commit
+private/
+*.private.json
