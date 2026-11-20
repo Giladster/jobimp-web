@@ -21,6 +21,7 @@ const DEMO_ALERTS=[
 const DEMO_RECS=[{id:'r1',co:'Monday.com',label:'1st round with Noa',date:'Nov 12',mins:42,score:74}];
 let jobs=[],alerts=[],recordings=[],REAL=false,REPLY={};
 const DEMO_REPLY={Wix:[4,6,8],Riskified:[3,5,7],'Monday.com':[2,4,6],Playtika:[8,12,16],Gong:[5,9,13],Lemonade:[3,6,9],Fiverr:[3,5,8],Similarweb:[3,5,7]};
+let tlMode='Timeline';
 let view='today',jobsMode='list',jobTab='applied',srcTab='All',curJob=null,scope='main',recMode=0;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -149,7 +150,8 @@ function renderJob(){
   <div class="tabsline" style="margin-top:26px">${ST.map(s=>`<button class="${s===j.status?'on':''}" data-st="${s}">${SL[s]}</button>`).join('')}</div>
   <div class="grid2" style="margin-top:26px">
     <div>${j.days!=null&&j.status!=='saved'?`<div class="count"><b>${j.days}</b>days since you applied</div><div style="margin-top:8px">${track(j,false)}${axis}</div>`:j.since?`<div class="count">In touch since ${esc(j.since)}. Apply date not in your email.</div>`:`<div class="count">Not applied yet. Apply early: replies drop after day 2.</div>`}
-      <div class="lbl">Timeline</div><div class="list tl">${j.tl.map(t=>`<div class="row"><span class="d">${t[0]}</span><span class="x">${esc(t[1])}</span></div>`).join('')}</div></div>
+      <div class="tlh"><div class="lbl">Timeline</div><div class="seg sm">${['Timeline','List'].map(m=>`<button class="${tlMode===m?'on':''}" data-tlm="${m}">${m}</button>`).join('')}</div></div>
+      ${tlMode==='List'?`<div class="list tl">${j.tl.map(t=>`<div class="row"><span class="d">${t[0]}</span><span class="x">${esc(t[1])}</span></div>`).join('')}</div>`:visualTimeline(j)}</div>
     <div><button class="nudge" data-cmd="${esc(jobChips(j)[0])}"><span class="spark">${I(SPARK)}</span><div class="txt">${n}<div class="more">${esc(jobChips(j)[0])} →</div></div></button>
       <div class="lbl">Actions</div><div class="list">
       <button class="row" data-recfor="${esc(j.co)}"><span class="txt t1" style="font-weight:400">Record an interview</span><span class="chev">›</span></button>
@@ -160,6 +162,7 @@ function renderJob(){
 $('#page').addEventListener('click',e=>{
   if(view!=='job')return;
   if(e.target.closest('[data-back]')){show('jobs');return}
+  const tm=e.target.closest('[data-tlm]');if(tm){tlMode=tm.dataset.tlm;renderJob();return}
   const s=e.target.closest('[data-st]');if(s){setStatus(curJob,s.dataset.st);toast(`Moved to ${SL[s.dataset.st]}`);render();renderABar()}
 });
 document.addEventListener('click',e=>{const r=e.target.closest('[data-recfor]');if(r){show('interview');$('#jobSel').value=r.dataset.recfor}});
@@ -437,3 +440,31 @@ $('#pwRow').onsubmit=async e=>{
 };
 document.addEventListener('click',e=>{if(e.target.closest('[data-switch]')){closeModal();openAgentMobile(false);showLogin()}});
 showLogin();
+
+/* visual timeline: one vertical line, dots spaced by the days between events, a "today" marker, future steps hollow */
+const MON={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+function tlDate(label){
+  const t0=new Date(new Date().toDateString());
+  if(/^today$/i.test(label))return t0;
+  const m=/^([A-Z][a-z]{2})\s+(\d{1,2})$/.exec(label.trim());if(!m||!(m[1] in MON))return null;
+  let d=new Date(t0.getFullYear(),MON[m[1]],+m[2]);
+  if(d-t0>120*864e5)d=new Date(t0.getFullYear()-1,MON[m[1]],+m[2]);
+  return d;
+}
+function visualTimeline(j){
+  const t0=new Date(new Date().toDateString());
+  let ev=j.tl.map(t=>({d:tlDate(t[0]),label:t[0],x:t[1]})).filter(e=>e.d).sort((a,b)=>a.d-b.d);
+  if(!ev.length)return '<div class="empty">No dates yet.</div>';
+  const items=[];let todayIn=false;
+  ev.forEach(e=>{if(!todayIn&&e.d>t0){items.push({today:true,d:t0});todayIn=true}items.push(e)});
+  if(!todayIn)items.push({today:true,d:t0});
+  const dn=(a,b)=>Math.round((b-a)/864e5);
+  let h='';
+  items.forEach((e,i)=>{
+    if(i){const g=dn(items[i-1].d,e.d),px=Math.round(Math.min(64,6+Math.sqrt(g)*9));
+      h+=`<div class="vg" style="height:${px}px">${g>0?`<span>${g} day${g===1?'':'s'}</span>`:''}</div>`}
+    if(e.today)h+=`<div class="ve today"><i></i><span class="vd">Today</span><span class="vx"></span></div>`;
+    else h+=`<div class="ve${e.d>t0?' fut':''}${/reject|closed/i.test(e.x)?' bad':''}"><i></i><span class="vd">${esc(e.label)}</span><span class="vx">${esc(e.x)}</span></div>`;
+  });
+  return `<div class="vtl">${h}</div>`;
+}

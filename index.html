@@ -278,6 +278,24 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
   .hero h2{font-size:27.6px}
 }
 
+
+/* visual timeline */
+.tlh{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.seg.sm{margin-bottom:4px}.seg.sm button{padding:3px 10px;font-size:13.2px}
+.vtl{position:relative;padding:10px 0 4px 26px}
+.vtl::before{content:"";position:absolute;left:5px;top:18px;bottom:14px;width:1.5px;background:var(--surface2)}
+.ve{position:relative;display:flex;gap:14px;align-items:baseline;min-height:22px}
+.ve i{position:absolute;left:-26px;top:5px;width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--bg)}
+.ve.fut i{background:var(--bg);border:1.5px solid var(--s-interview)}
+.ve.bad i{background:var(--s-closed)}
+.ve.today i{background:var(--ink);width:7px;height:7px;left:-24px;top:7px}
+.ve.today .vd{color:var(--ink)}
+.ve .vd{width:56px;flex:none;font-size:13.8px;color:var(--faint)}
+.ve .vx{font-size:15.5px;color:var(--muted)}
+.ve.fut .vx{color:var(--s-interview)}
+.vg{position:relative;display:flex;align-items:center}
+.vg span{font-size:11.5px;color:var(--faint);margin-left:70px}
+
 /* login */
 .login{position:fixed;inset:0;z-index:100;background:var(--bg);display:grid;place-items:center;padding:24px 16px}
 .lbox{width:min(420px,100%)}
