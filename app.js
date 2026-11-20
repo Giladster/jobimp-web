@@ -119,7 +119,7 @@ function renderJobs(){
   if(jobsMode==='board'){
     h+=`<div class="cols">${ST.map(s=>{const js=jobs.filter(j=>j.status===s);return`<div class="col"><h4><span class="st ${s}">${SL[s]}</span><span class="c">${js.length}</span></h4>
      ${js.map(j=>`<button class="kc" data-open="${j.id}"><div class="co">${esc(j.co)}</div><div class="rl">${esc(j.role)}</div>
-     <div class="ft"><span>${j.next?j.next.split(',')[0]:j.days!=null&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':''}</span>${delBtn(j)}</div></button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
+     <div class="ft"><span>${j.next?j.next.split(',')[0]:j.days!=null&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':''}</span></div>${delBtn(j)}</button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
      <div class="note" style="margin-top:14px">Click a card to open it. Its agent opens on the right.</div>`;
   }else{
     const js=jobs.filter(j=>j.status===jobTab);

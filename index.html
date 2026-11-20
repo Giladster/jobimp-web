@@ -298,11 +298,12 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
 
 
 /* remove job */
-.del{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:var(--faint);flex:none;opacity:0;transition:opacity .15s}
-.del svg.i{width:15px;height:15px}
+.del{position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:var(--faint);opacity:0;transition:opacity .15s}
+.list button.row,.kc{position:relative}
+.kc .co{padding-right:22px}
+.del svg.i{width:14px;height:14px}
 .del:hover{color:var(--s-closed);background:var(--surface)}
 .row:hover .del,.kc:hover .del,.del:focus-visible{opacity:1}
-.kc .ft .del{width:24px;height:24px;margin:-4px -4px -4px 0}
 .dh .sbtn:hover{color:var(--s-closed)}
 .toast.act{pointer-events:auto}
 .toast .link{font-size:inherit;margin-left:8px}
