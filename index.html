@@ -340,6 +340,12 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .sw{border:0;background:none;color:var(--faint)}
 .sw:hover{color:var(--ink)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.gsync{font-size:12.5px;color:var(--faint);padding:10px 10px 8px;display:flex;align-items:center;gap:7px;line-height:1.3}
+.gsync .glink{color:inherit;text-decoration:underline;text-underline-offset:3px}
+.gdot{width:7px;height:7px;border-radius:50%;background:#3fb27f;flex:none}
+.gdot.off{background:#666}.gdot.busy{background:#e0a84a;animation:gpulse 1.2s ease-in-out infinite}
+@keyframes gpulse{50%{opacity:.35}}
+a.acc{text-decoration:none;color:inherit}
 </style></head>
 <body>
 <div class="app">
@@ -354,7 +360,8 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
     </nav>
     <div class="sideh">Active jobs</div>
     <div class="sjobs" id="sjobs"></div>
-    <div class="me"><div class="av sm">G</div><span id="meName">Gilad</span><button class="wa sw" data-switch title="Sign out and switch account">Switch</button></div>
+    <div class="gsync" id="gsync" hidden></div>
+    <div class="me"><div class="av sm" id="meAv">G</div><span id="meName">Gilad</span><button class="wa sw" data-switch title="Sign out and switch account">Switch</button></div>
   </aside>
 
   <main class="main" id="main"><div class="wrap" id="page"></div></main>
@@ -383,6 +390,7 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
     <form class="pw" id="pwRow" hidden><input id="pw" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password"><button class="pbtn pri">Sign in</button></form>
     <label class="rem" id="remRow" hidden><input type="checkbox" id="rem" checked> Remember me on this device</label>
     <div class="lerr" id="loginErr" role="status"></div>
+    <a class="acc gbtn" id="gBtn" href="/api/google?start=1" hidden><div class="av g">G</div><div class="txt"><div class="t1">Continue with Google</div><div class="t2">Reads your job emails and calendar. Read only.</div></div><span class="chev">›</span></a>
     <button class="acc" data-acc="demo"><div class="av">D</div><div class="txt"><div class="t1">Demo account</div><div class="t2">Sample jobs, nothing real</div></div><span class="chev">›</span></button>
     <div class="lnote">Gmail and calendar are read only. JobImp never sends, edits or deletes anything.</div>
   </div>

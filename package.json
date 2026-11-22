@@ -1,0 +1,10 @@
+{
+  "name": "jobimp-web",
+  "private": true,
+  "description": "JobImp web app: static front end + Vercel functions in api/",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  }
+}

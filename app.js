@@ -19,7 +19,7 @@ const DEMO_ALERTS=[
  {id:'a7',co:'Taboola',role:'Product Manager, Ads',loc:'Tel Aviv',hrs:52,src:'AllJobs',tag:'new'},
 ];
 const DEMO_RECS=[{id:'r1',co:'Monday.com',label:'1st round with Noa',date:'Nov 12',mins:42,score:74}];
-let jobs=[],alerts=[],recordings=[],REAL=false,REPLY={};
+let jobs=[],alerts=[],recordings=[],REAL=false,REPLY={},ME='',GOOGLE={},VER='';
 const DEMO_REPLY={Wix:[4,6,8],Riskified:[3,5,7],'Monday.com':[2,4,6],Playtika:[8,12,16],Gong:[5,9,13],Lemonade:[3,6,9],Fiverr:[3,5,8],Similarweb:[3,5,7]};
 let tlMode='Timeline';
 let view='today',jobsMode='list',jobTab='applied',srcTab='All',curJob=null,scope='main',recMode=0;
@@ -359,9 +359,9 @@ const fmt=d=>dt(d).toLocaleDateString('en-US',{month:'short',day:'numeric'});
 const daysBetween=(a,b)=>Math.round((dt(b)-dt(a))/DAY);
 const median=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
 function loadReal(data){
-  REAL=true;alerts=[];recordings=[];
+  REAL=true;alerts=[];recordings=[];ME=data.name||'You';GOOGLE=data.google||{};VER=data.v||'';
   const iso=localIso(TODAY);
-  jobs=data.jobs.map((j,i)=>({id:i+1,co:j.co,role:j.role,loc:j.loc||'',src:j.src||'Email',status:j.status,next:null,nextRaw:j.next||null,
+  jobs=data.jobs.map((j,i)=>({id:j.id??i+1,co:j.co,role:j.role,loc:j.loc||'',src:j.src||'Email',status:j.status,next:null,nextRaw:j.next||null,
     applied:j.applied,firstReply:j.firstReply,tl0:j.tl.map(t=>[...t]),tl:j.tl.map(t=>[...t]),
     days:j.applied?daysBetween(j.applied,iso):null,
     replied:j.applied&&j.firstReply?daysBetween(j.applied,j.firstReply):null,
@@ -369,7 +369,7 @@ function loadReal(data){
   const r=jobs.filter(j=>j.replied!=null).map(j=>j.replied).sort((a,b)=>a-b);
   const q=f=>r.length?r[Math.min(r.length-1,Math.floor(f*r.length))]:7;
   const band=[q(.25),median(r)??7,q(.75)];REPLY={};jobs.forEach(j=>REPLY[j.co]=band);
-  jobTab='interview';applyHidden();applyMoves();refreshTime();
+  if(!jobs.some(j=>j.status===jobTab))jobTab=jobs.some(j=>j.status==='interview')?'interview':'applied';migrateLocal();refreshTime();
 }
 function loadDemo(){REAL=false;jobs=DEMO_JOBS.map(j=>({...j,tl:[...j.tl]}));alerts=DEMO_ALERTS.map(a=>({...a}));recordings=[...DEMO_RECS];REPLY=DEMO_REPLY;jobTab='applied';applyHidden();applyMoves()}
 function realStats(){
@@ -429,37 +429,97 @@ function renderStatsReal(){
 
 /* login */
 function startApp(){
-  $('#login').hidden=true;$('#meName').textContent=REAL?'Gilad':'Demo account';
+  $('#login').hidden=true;$('#meName').textContent=REAL?ME:'Demo account';$('#meAv').textContent=(REAL?ME:'D')[0]||'G';renderGoogle();
   view='today';curJob=null;for(const k in threads)delete threads[k];
   setScope('main');show('today');
 }
-function showLogin(){$('#login').hidden=false;$('#pwRow').hidden=true;$('#remRow').hidden=true;$('#loginErr').textContent='';}
+function showLogin(){$('#login').hidden=false;$('#pwRow').hidden=true;$('#remRow').hidden=true;$('#loginErr').textContent='';$('#gBtn').hidden=!GOOGLE_ON}
 const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}},del:k=>{try{localStorage.removeItem(k)}catch{}}};
-function signOut(){store.del('jobimp-token');store.del('jobimp-account')}
+let GOOGLE_ON=false;
+async function api(path,body){
+  const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+  const d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(d.error||'Could not reach the backend.'),{status:r.status});return d;
+}
+function signOut(){store.del('jobimp-token');store.del('jobimp-account');api('/api/login',{logout:true}).catch(()=>{})}
+async function openReal(){
+  const d=await api('/api/jobs');loadReal(d);startApp();
+  try{api('/api/jobs',{op:'tz',tz:Intl.DateTimeFormat().resolvedOptions().timeZone})}catch{}
+  if(GOOGLE.importing)runImport();
+}
 $('#login').addEventListener('click',async e=>{
   if(e.target.closest('[data-acc="demo"]')){if($('#rem').checked)store.set('jobimp-account','demo');loadDemo();startApp();return}
   if(e.target.closest('[data-acc="gilad"]')){$('#pwRow').hidden=false;$('#remRow').hidden=false;$('#pw').focus();return}
 });
 $('#pwRow').onsubmit=async e=>{
   e.preventDefault();const err=$('#loginErr');err.textContent='Checking…';
-  try{const r=await fetch('/api/my-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('#pw').value,remember:$('#rem').checked})});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok){err.textContent=d.error||'Could not sign in.';return}
-    $('#pw').value='';if(d.token){store.set('jobimp-token',d.token);store.set('jobimp-account','gilad')}loadReal(d);startApp();
-  }catch{err.textContent='Could not reach the backend.'}
+  try{const d=await api('/api/login',{password:$('#pw').value,remember:$('#rem').checked});
+    $('#pw').value='';if(d.token)store.set('jobimp-token',d.token);store.set('jobimp-account','gilad');err.textContent='';await openReal();
+  }catch(x){err.textContent=x.message||'Could not sign in.'}
 };
-document.addEventListener('click',e=>{if(e.target.closest('[data-switch]')){signOut();closeModal();openAgentMobile(false);showLogin()}});
+document.addEventListener('click',e=>{if(e.target.closest('[data-switch]')){signOut();REAL=false;closeModal();openAgentMobile(false);showLogin()}});
 (async function autoLogin(){
-  const acc=store.get('jobimp-account'),tok=store.get('jobimp-token');
-  if(acc==='demo'){loadDemo();startApp();return}
-  if(acc==='gilad'&&tok){
-    try{const r=await fetch('/api/my-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok})});
-      if(r.ok){loadReal(await r.json());startApp();return}
-      if(r.status===401)signOut();
-    }catch{}
-  }
+  const msg={connected:'',denied:'Google sign-in was canceled.',failed:'Google sign-in did not work. Try again.',taken:'That Google account is already used by another JobImp account.',off:'Google sign-in is not set up yet.'};
+  const gq=new URLSearchParams(location.search).get('google');if(gq)history.replaceState(null,'',location.pathname);
+  let me=null;try{const d=await api('/api/login');me=d.user;GOOGLE_ON=!!d.google}catch{}
+  if(gq&&msg[gq])toast(msg[gq]);
+  try{
+    if(me){await openReal();if(gq==='connected')toast('Gmail connected. Reading your job emails…');return}
+    const acc=store.get('jobimp-account'),tok=store.get('jobimp-token');
+    if(acc==='demo'){loadDemo();startApp();return}
+    if(acc==='gilad'&&tok){await api('/api/login',{token:tok});await openReal();return}
+  }catch(x){if(x.status===401)signOut()}
   showLogin();
 })();
+
+/* saving the real account's changes in the database */
+function saveJob(j,removed){
+  if(!REAL)return;
+  api('/api/jobs',{op:'save',id:j.id,status:j.status,tl:j.tl0||j.tl,removed:!!removed}).then(d=>{if(d.v)VER=d.v}).catch(x=>toast(x.status===401?'Please sign in again.':'Could not save. Check your connection.'));
+}
+// One time: moves and removals made before the database are copied to it, then cleared from this browser.
+function migrateLocal(){
+  let hid=[],mov={};try{hid=JSON.parse(localStorage.getItem('jobimp-removed-gilad')||'[]');mov=JSON.parse(localStorage.getItem('jobimp-moves-gilad')||'{}')}catch{}
+  if(!hid.length&&!Object.keys(mov).length)return;
+  jobs.forEach(j=>{const c=mov[jkey(j)];if(!c)return;if(j.tl0.some(t=>c.notes.some(n=>n[0]===t[0]&&n[1]===t[1])))return;
+    j.status=c.status;j.tl0=[...c.notes.map(x=>[...x]),...j.tl0];j.tl=j.tl0.map(x=>[...x]);saveJob(j)});
+  const h=new Set(hid);jobs.filter(j=>h.has(jkey(j))).forEach(j=>saveJob(j,true));jobs=jobs.filter(j=>!h.has(jkey(j)));
+  store.del('jobimp-removed-gilad');store.del('jobimp-moves-gilad');
+}
+
+/* Gmail connection: status in the sidebar, first import, and live updates */
+const agoMin=t=>{if(!t)return'';const m=Math.round((Date.now()-new Date(t))/60e3);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago'};
+let importing=false;
+function renderGoogle(){
+  const el=$('#gsync');if(!el)return;
+  if(!REAL){el.hidden=true;return}
+  el.hidden=false;
+  if(!GOOGLE.available){el.innerHTML=`<span class="gdot off"></span>Gmail not linked yet`;return}
+  if(!GOOGLE.connected){el.innerHTML=`<a class="glink" href="/api/google?start=1">Connect Gmail &amp; Calendar</a>`;return}
+  el.innerHTML=importing||GOOGLE.importing?`<span class="gdot busy"></span>Reading your Gmail…`:`<span class="gdot"></span>Gmail live · ${esc(agoMin(GOOGLE.lastSync)||'waiting')}`;
+  el.title=`Read only: ${GOOGLE.email||''}`;
+}
+async function runImport(){
+  if(importing)return;importing=true;renderGoogle();
+  try{for(let k=0;k<200;k++){const r=await api('/api/jobs',{op:'sync'});await pull(true);if(r.done)break;
+      const el=$('#gsync');if(el)el.innerHTML=`<span class="gdot busy"></span>Reading… ${r.read||0} checked`}
+    toast('Done reading your Gmail and calendar');
+  }catch(x){toast(x.message||'Could not read Gmail right now.')}
+  importing=false;await pull(true);
+}
+async function pull(force,fresh){
+  if(!REAL||!$('#login').hidden)return;
+  try{const d=await api('/api/jobs?'+new URLSearchParams(force?(fresh?{fresh:1}:{}):{v:VER,...(fresh?{fresh:1}:{})}));
+    if(d.same){return}
+    GOOGLE=d.google||GOOGLE;VER=d.v;
+    const keepView=view,keepJob=curJob?.id,keepTab=jobTab,keep=$('#main').scrollTop;
+    loadReal(d);jobTab=keepTab;
+    if(keepView==='job'){curJob=jobs.find(j=>j.id===keepJob)||null;view=curJob?'job':'jobs'}else view=keepView;
+    render();renderGoogle();$('#main').scrollTop=keep;
+  }catch(x){if(x.status===401){signOut();showLogin()}}
+}
+// Check for news every 20 s while the app is open (asks Gmail directly every 2 min, in case a ping was missed).
+let pullN=0;setInterval(()=>{if(document.hidden||importing||drag)return;pullN++;pull(false,pullN%6===0);renderGoogle()},20e3);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!importing)pull(false,true)});
 
 /* visual timeline: one vertical line, dots spaced by the days between events, a "today" marker, future steps hollow */
 const MON={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
@@ -500,13 +560,13 @@ function applyHidden(){const h=new Set(hidList());jobs=jobs.filter(j=>!h.has(jke
 let lastRemoved=null,undoFn=null;
 function removeJob(id){
   const i=jobs.findIndex(j=>j.id===id);if(i<0)return;const j=jobs[i];
-  jobs.splice(i,1);lastRemoved={j,i};hidSave([...new Set([...hidList(),jkey(j)])]);
+  jobs.splice(i,1);lastRemoved={j,i};if(REAL)saveJob(j,true);else hidSave([...new Set([...hidList(),jkey(j)])]);
   if(view==='job'&&curJob?.id===id)show('jobs');else render();
   toast(`${j.co} removed`,true);
 }
 function undoRemove(){
   if(!lastRemoved)return;const{j,i}=lastRemoved;lastRemoved=null;
-  jobs.splice(Math.min(i,jobs.length),0,j);hidSave(hidList().filter(k=>k!==jkey(j)));
+  jobs.splice(Math.min(i,jobs.length),0,j);if(REAL)saveJob(j);else hidSave(hidList().filter(k=>k!==jkey(j)));
   render();toast(`${j.co} is back`);
 }
 document.addEventListener('keydown',e=>{const d=e.target.closest?.('[data-del]');if(d&&(e.key==='Enter'||e.key===' ')){e.preventDefault();e.stopPropagation();removeJob(+d.dataset.del)}},true);
@@ -543,11 +603,12 @@ const IC_BOOKMARK='<path d="M7 3.5h10a1 1 0 0 1 1 1V21l-6-4.2L6 21V4.5a1 1 0 0 1
 const movKey=()=>'jobimp-moves-'+(REAL?'gilad':'demo');
 function movGet(){try{return JSON.parse(localStorage.getItem(movKey())||'{}')}catch{return{}}}
 function movSet(o){try{localStorage.setItem(movKey(),JSON.stringify(o))}catch{}}
-function saveMove(j,prev,note){const o=movGet(),k=jkey(j);const c=o[k]||{orig:prev,notes:[]};c.status=j.status;c.notes=[note,...c.notes];o[k]=c;movSet(o)}
+function saveMove(j,prev,note){if(REAL){saveJob(j);return}const o=movGet(),k=jkey(j);const c=o[k]||{orig:prev,notes:[]};c.status=j.status;c.notes=[note,...c.notes];o[k]=c;movSet(o)}
 function applyMoves(){const o=movGet();jobs.forEach(j=>{const c=o[jkey(j)];if(!c)return;j.status=c.status;const n=c.notes.map(x=>[...x]);j.tl=[...n,...j.tl];if(j.tl0)j.tl0=[...n.map(x=>[...x]),...j.tl0]})}
 function undoMove(j,r,tab){
   j.status=r.prev;j.tl=j.tl.filter(t=>t!==r.note);if(j.tl0)j.tl0=j.tl0.filter(t=>t!==r.note);
-  const o=movGet(),k=jkey(j),c=o[k];if(c){c.notes.shift();c.status=r.prev;if(!c.notes.length&&c.status===c.orig)delete o[k];movSet(o)}
+  if(REAL)saveJob(j);
+  const o=REAL?{}:movGet(),k=jkey(j),c=o[k];if(c){c.notes.shift();c.status=r.prev;if(!c.notes.length&&c.status===c.orig)delete o[k];movSet(o)}
   if(tab)jobTab=tab;refreshTime();render();renderABar();toast(`${j.co} moved back`);
 }
 function moveJob(j,s){
