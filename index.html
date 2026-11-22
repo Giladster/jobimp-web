@@ -320,6 +320,8 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
 .acc .txt{flex:1}
 .pw{display:flex;gap:8px;margin:4px 0 0}
 .pw input{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:10px 14px;font:inherit;font-size:15px}
+.rem{display:flex;align-items:center;gap:8px;font-size:13.8px;color:var(--muted);margin-top:12px;cursor:pointer}
+.rem input{accent-color:var(--accent);width:15px;height:15px;margin:0}
 .lerr{min-height:20px;font-size:13.8px;color:var(--s-closed);margin-top:10px}
 .lnote{font-size:12.6px;color:var(--faint);margin-top:18px;line-height:1.5}
 .sw{border:0;background:none;color:var(--faint)}
@@ -339,7 +341,7 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
     </nav>
     <div class="sideh">Active jobs</div>
     <div class="sjobs" id="sjobs"></div>
-    <div class="me"><div class="av sm">G</div><span id="meName">Gilad</span><button class="wa sw" data-switch title="Switch account">Switch</button></div>
+    <div class="me"><div class="av sm">G</div><span id="meName">Gilad</span><button class="wa sw" data-switch title="Sign out and switch account">Switch</button></div>
   </aside>
 
   <main class="main" id="main"><div class="wrap" id="page"></div></main>
@@ -366,6 +368,7 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
     <p>Pick the sample data or your real job search.</p>
     <button class="acc" data-acc="gilad"><div class="av">G</div><div class="txt"><div class="t1">Gilad</div><div class="t2">Real data from your Gmail and calendar</div></div><span class="chev">›</span></button>
     <form class="pw" id="pwRow" hidden><input id="pw" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password"><button class="pbtn pri">Sign in</button></form>
+    <label class="rem" id="remRow" hidden><input type="checkbox" id="rem" checked> Remember me on this device</label>
     <div class="lerr" id="loginErr" role="status"></div>
     <button class="acc" data-acc="demo"><div class="av">D</div><div class="txt"><div class="t1">Demo account</div><div class="t2">Sample jobs, nothing real</div></div><span class="chev">›</span></button>
     <div class="lnote">Gmail and calendar are read only. JobImp never sends, edits or deletes anything.</div>

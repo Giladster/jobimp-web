@@ -431,21 +431,33 @@ function startApp(){
   view='today';curJob=null;for(const k in threads)delete threads[k];
   setScope('main');show('today');
 }
-function showLogin(){$('#login').hidden=false;$('#pwRow').hidden=true;$('#loginErr').textContent='';}
+function showLogin(){$('#login').hidden=false;$('#pwRow').hidden=true;$('#remRow').hidden=true;$('#loginErr').textContent='';}
+const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}},del:k=>{try{localStorage.removeItem(k)}catch{}}};
+function signOut(){store.del('jobimp-token');store.del('jobimp-account')}
 $('#login').addEventListener('click',async e=>{
-  if(e.target.closest('[data-acc="demo"]')){loadDemo();startApp();return}
-  if(e.target.closest('[data-acc="gilad"]')){$('#pwRow').hidden=false;$('#pw').focus();return}
+  if(e.target.closest('[data-acc="demo"]')){if($('#rem').checked)store.set('jobimp-account','demo');loadDemo();startApp();return}
+  if(e.target.closest('[data-acc="gilad"]')){$('#pwRow').hidden=false;$('#remRow').hidden=false;$('#pw').focus();return}
 });
 $('#pwRow').onsubmit=async e=>{
   e.preventDefault();const err=$('#loginErr');err.textContent='Checking…';
-  try{const r=await fetch('/api/my-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('#pw').value})});
+  try{const r=await fetch('/api/my-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('#pw').value,remember:$('#rem').checked})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok){err.textContent=d.error||'Could not sign in.';return}
-    $('#pw').value='';loadReal(d);startApp();
+    $('#pw').value='';if(d.token){store.set('jobimp-token',d.token);store.set('jobimp-account','gilad')}loadReal(d);startApp();
   }catch{err.textContent='Could not reach the backend.'}
 };
-document.addEventListener('click',e=>{if(e.target.closest('[data-switch]')){closeModal();openAgentMobile(false);showLogin()}});
-showLogin();
+document.addEventListener('click',e=>{if(e.target.closest('[data-switch]')){signOut();closeModal();openAgentMobile(false);showLogin()}});
+(async function autoLogin(){
+  const acc=store.get('jobimp-account'),tok=store.get('jobimp-token');
+  if(acc==='demo'){loadDemo();startApp();return}
+  if(acc==='gilad'&&tok){
+    try{const r=await fetch('/api/my-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok})});
+      if(r.ok){loadReal(await r.json());startApp();return}
+      if(r.status===401)signOut();
+    }catch{}
+  }
+  showLogin();
+})();
 
 /* visual timeline: one vertical line, dots spaced by the days between events, a "today" marker, future steps hollow */
 const MON={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
