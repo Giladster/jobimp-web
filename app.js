@@ -1,4 +1,4 @@
-const ST=['saved','applied','interview','offer','closed'];
+const ST=['applied','interview','offer','closed','saved'];
 const SL={saved:'Saved',applied:'Awaiting reply',interview:'Interview',offer:'Offer',closed:'Closed'};
 const SOURCES=['All','LinkedIn','Company site','Drushim','AllJobs'];
 const DEMO_JOBS=[
@@ -55,7 +55,7 @@ function renderSide(){
   $('#sjobs').innerHTML=act.map(j=>`<button class="sj${view==='job'&&curJob?.id===j.id?' on':''}" data-open="${j.id}" title="${SL[j.status]}"><span class="st ${j.status}"></span><span class="nm">${esc(j.co)}</span></button>`).join('');
 }
 document.addEventListener('click',e=>{const d=e.target.closest('[data-del]');if(d){e.stopPropagation();removeJob(+d.dataset.del);return}
-  if(e.target.closest('[data-undo]')){undoRemove();return}
+  if(e.target.closest('[data-undo]')){const f=undoFn||undoRemove;undoFn=null;f();return}
   const o=e.target.closest('[data-open]');if(o){openJob(+o.dataset.open)}},true);
 
 /* today */
@@ -117,14 +117,14 @@ const IC_BOARD='<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4
 function renderJobs(){
   let h=`<div class="ph"><h1>My jobs</h1><div class="seg"><button class="${jobsMode==='list'?'on':''}" data-mode="list">${I(IC_LIST)}List</button><button class="${jobsMode==='board'?'on':''}" data-mode="board">${I(IC_BOARD)}Board</button></div></div>`;
   if(jobsMode==='board'){
-    h+=`<div class="cols">${ST.map(s=>{const js=jobs.filter(j=>j.status===s);return`<div class="col"><h4><span class="st ${s}">${SL[s]}</span><span class="c">${js.length}</span></h4>
-     ${js.map(j=>`<button class="kc" data-open="${j.id}"><div class="co">${esc(j.co)}</div><div class="rl">${esc(j.role)}</div>
+    h+=`<div class="cols">${ST.map(s=>{const js=jobs.filter(j=>j.status===s);return`<div class="col" data-drop="${s}"><h4>${s==='saved'?`<span class="bm" title="Saved">${I(IC_BOOKMARK)}</span>`:`<span class="st ${s}">${SL[s]}</span>`}<span class="c">${js.length}</span></h4>
+     ${js.map(j=>`<button class="kc" data-open="${j.id}" data-drag="${j.id}"><div class="co">${esc(j.co)}</div><div class="rl">${esc(j.role)}</div>
      <div class="ft"><span>${j.next?j.next.split(',')[0]:j.days!=null&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':''}</span></div>${delBtn(j)}</button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
      <div class="note" style="margin-top:14px">Click a card to open it. Its agent opens on the right.</div>`;
   }else{
     const js=jobs.filter(j=>j.status===jobTab);
-    h+=`<div class="tabsline">${ST.map(s=>`<button class="${s===jobTab?'on':''}" data-s="${s}">${SL[s]}<span class="n">${jobs.filter(j=>j.status===s).length}</span></button>`).join('')}</div>
-    ${js.length?`<div class="list" style="margin-top:4px">${js.map(j=>`<button class="row" data-open="${j.id}">${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)}</div><div class="t2">${esc(j.role)}${j.loc?' · '+esc(j.loc):''}</div>${j.next?`<div class="next">${j.next}</div>`:''}</div>
+    h+=`<div class="tabsline">${ST.map(s=>`<button class="${s===jobTab?'on':''}" data-s="${s}" data-drop="${s}"${s==='saved'?' title="Saved" aria-label="Saved"':''}>${s==='saved'?`<span class="bm">${I(IC_BOOKMARK)}</span>`:SL[s]}<span class="n">${jobs.filter(j=>j.status===s).length}</span></button>`).join('')}</div>
+    ${js.length?`<div class="list" style="margin-top:4px">${js.map(j=>`<button class="row" data-open="${j.id}" data-drag="${j.id}">${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)}</div><div class="t2">${esc(j.role)}${j.loc?' · '+esc(j.loc):''}</div>${j.next?`<div class="next">${j.next}</div>`:''}</div>
      <span class="src">${j.src}</span>
      ${(j.status==='applied'||j.status==='interview')&&j.days!=null?`<div class="days${j.days>=10&&j.status==='applied'?' hot':''}"><div class="n">${j.days}d</div><div class="l">applied</div></div>`:'<div class="days"></div>'}${delBtn(j)}<span class="chev">›</span></button>`).join('')}</div>`:`<div class="empty">Nothing here yet.</div>`}`;
   }
@@ -149,7 +149,7 @@ function renderJob(){
   else n=`I can compare this offer with market pay.`;
   $('#page').innerHTML=`<button class="back" data-back>‹ My jobs</button>
   <div class="dh">${av(j.co,'lg')}<div style="flex:1"><h2>${esc(j.role)}</h2><div class="t2">${esc(j.co)}${j.loc?' · '+esc(j.loc):''} · <span class="src">${j.src}</span></div></div><button class="sbtn" data-del="${j.id}" title="Remove this job" aria-label="Remove this job">${I(IC_TRASH)}</button></div>
-  <div class="tabsline" style="margin-top:26px">${ST.map(s=>`<button class="${s===j.status?'on':''}" data-st="${s}">${SL[s]}</button>`).join('')}</div>
+  <div class="tabsline" style="margin-top:26px">${ST.map(s=>`<button class="${s===j.status?'on':''}" data-st="${s}"${s==='saved'?' title="Saved" aria-label="Saved"':''}>${s==='saved'?`<span class="bm">${I(IC_BOOKMARK)}</span>`:SL[s]}</button>`).join('')}</div>
   <div class="grid2" style="margin-top:26px">
     <div>${j.days!=null&&j.status!=='saved'?`<div class="count"><b>${j.days}</b>days since you applied</div><div style="margin-top:8px">${track(j,false)}${axis}</div>`:j.since?`<div class="count">In touch since ${esc(j.since)}. Apply date not in your email.</div>`:`<div class="count">Not applied yet. Apply early: replies drop after day 2.</div>`}
       <div class="tlh"><div class="lbl">Timeline</div><div class="seg sm">${['Timeline','List'].map(m=>`<button class="${tlMode===m?'on':''}" data-tlm="${m}">${m}</button>`).join('')}</div></div>
@@ -168,7 +168,9 @@ $('#page').addEventListener('click',e=>{
   const s=e.target.closest('[data-st]');if(s){setStatus(curJob,s.dataset.st);toast(`Moved to ${SL[s.dataset.st]}`);render();renderABar()}
 });
 document.addEventListener('click',e=>{const r=e.target.closest('[data-recfor]');if(r){show('interview');$('#jobSel').value=r.dataset.recfor}});
-function setStatus(j,s){if(j.status===s)return;j.status=s;if(s==='applied')j.days=0;j.tl.unshift(['Today',s==='closed'?'Closed':'Moved to '+SL[s]]);jobTab=s}
+function setStatus(j,s,keepTab){if(j.status===s)return null;const prev=j.status;j.status=s;if(!REAL&&s==='applied')j.days=0;
+  const note=[TODAY.toLocaleDateString('en-US',{month:'short',day:'numeric'}),s==='closed'?'Closed':s==='saved'?'Saved for later':'Moved to '+SL[s]];
+  j.tl.unshift(note);if(j.tl0)j.tl0.unshift(note);if(!keepTab)jobTab=s;saveMove(j,prev,note);return{prev,note}}
 
 /* interviews */
 let recT=null,recS=0;
@@ -367,9 +369,9 @@ function loadReal(data){
   const r=jobs.filter(j=>j.replied!=null).map(j=>j.replied).sort((a,b)=>a-b);
   const q=f=>r.length?r[Math.min(r.length-1,Math.floor(f*r.length))]:7;
   const band=[q(.25),median(r)??7,q(.75)];REPLY={};jobs.forEach(j=>REPLY[j.co]=band);
-  jobTab='interview';applyHidden();refreshTime();
+  jobTab='interview';applyHidden();applyMoves();refreshTime();
 }
-function loadDemo(){REAL=false;jobs=DEMO_JOBS.map(j=>({...j,tl:[...j.tl]}));alerts=DEMO_ALERTS.map(a=>({...a}));recordings=[...DEMO_RECS];REPLY=DEMO_REPLY;jobTab='applied';applyHidden()}
+function loadDemo(){REAL=false;jobs=DEMO_JOBS.map(j=>({...j,tl:[...j.tl]}));alerts=DEMO_ALERTS.map(a=>({...a}));recordings=[...DEMO_RECS];REPLY=DEMO_REPLY;jobTab='applied';applyHidden();applyMoves()}
 function realStats(){
   const ap=jobs.filter(j=>j.applied),rep=ap.filter(j=>j.firstReply);
   return{ap,rate:ap.length?Math.round(rep.length/ap.length*100):0,med:median(rep.map(j=>j.replied)),
@@ -495,7 +497,7 @@ const hidKey=()=>'jobimp-removed-'+(REAL?'gilad':'demo');
 function hidList(){try{return JSON.parse(localStorage.getItem(hidKey())||'[]')}catch{return[]}}
 function hidSave(l){try{localStorage.setItem(hidKey(),JSON.stringify(l))}catch{}}
 function applyHidden(){const h=new Set(hidList());jobs=jobs.filter(j=>!h.has(jkey(j)))}
-let lastRemoved=null;
+let lastRemoved=null,undoFn=null;
 function removeJob(id){
   const i=jobs.findIndex(j=>j.id===id);if(i<0)return;const j=jobs[i];
   jobs.splice(i,1);lastRemoved={j,i};hidSave([...new Set([...hidList(),jkey(j)])]);
@@ -535,3 +537,56 @@ function refreshTime(){
   return before!==JSON.stringify(jobs.map(j=>[j.next,j.days,j.tl]));
 }
 setInterval(()=>{if(REAL&&$('#login').hidden&&refreshTime()){const keep=$('#main').scrollTop;render();$('#main').scrollTop=keep}},60e3);
+
+/* status moves: saved per account in this browser until we have the database */
+const IC_BOOKMARK='<path d="M7 3.5h10a1 1 0 0 1 1 1V21l-6-4.2L6 21V4.5a1 1 0 0 1 1-1z"/>';
+const movKey=()=>'jobimp-moves-'+(REAL?'gilad':'demo');
+function movGet(){try{return JSON.parse(localStorage.getItem(movKey())||'{}')}catch{return{}}}
+function movSet(o){try{localStorage.setItem(movKey(),JSON.stringify(o))}catch{}}
+function saveMove(j,prev,note){const o=movGet(),k=jkey(j);const c=o[k]||{orig:prev,notes:[]};c.status=j.status;c.notes=[note,...c.notes];o[k]=c;movSet(o)}
+function applyMoves(){const o=movGet();jobs.forEach(j=>{const c=o[jkey(j)];if(!c)return;j.status=c.status;const n=c.notes.map(x=>[...x]);j.tl=[...n,...j.tl];if(j.tl0)j.tl0=[...n.map(x=>[...x]),...j.tl0]})}
+function undoMove(j,r,tab){
+  j.status=r.prev;j.tl=j.tl.filter(t=>t!==r.note);if(j.tl0)j.tl0=j.tl0.filter(t=>t!==r.note);
+  const o=movGet(),k=jkey(j),c=o[k];if(c){c.notes.shift();c.status=r.prev;if(!c.notes.length&&c.status===c.orig)delete o[k];movSet(o)}
+  if(tab)jobTab=tab;refreshTime();render();renderABar();toast(`${j.co} moved back`);
+}
+function moveJob(j,s){
+  const tab=jobTab,r=setStatus(j,s,true);if(!r)return;refreshTime();render();renderABar();
+  undoFn=()=>undoMove(j,r,tab);toast(`${j.co} moved to ${s==='saved'?'Saved':SL[s]}`,true);
+}
+
+/* drag and drop: board cards to columns, list rows to phase tabs. Mouse: drag. Touch: press and hold, then drag. */
+let drag=null,eatClick=false;
+function dragTarget(x,y){const el=document.elementFromPoint(x,y);return el&&el.closest('[data-drop]')}
+function dragStart(){
+  if(!drag||drag.on)return;drag.on=true;const r=drag.el.getBoundingClientRect();
+  const g=drag.el.cloneNode(true);g.classList.add('ghost');g.style.width=r.width+'px';g.removeAttribute('data-open');
+  drag.dx=drag.x-r.left;drag.dy=drag.y-r.top;drag.g=g;document.body.appendChild(g);drag.el.classList.add('dragging');document.body.classList.add('is-dragging');
+  dragMove(drag.x,drag.y);if(navigator.vibrate&&drag.touch)navigator.vibrate(15);
+}
+function dragMove(x,y){
+  drag.g.style.transform=`translate(${x-drag.dx}px,${y-drag.dy}px) rotate(1.5deg)`;
+  const t=dragTarget(x,y);if(t!==drag.t){drag.t?.classList.remove('drop-on');drag.t=t;const j=jobs.find(q=>q.id===drag.id);if(t&&t.dataset.drop!==j?.status)t.classList.add('drop-on')}
+}
+function dragEnd(drop){
+  if(!drag)return;clearTimeout(drag.timer);const d=drag;drag=null;
+  if(!d.on)return;d.g.remove();d.el.classList.remove('dragging');document.body.classList.remove('is-dragging');d.t?.classList.remove('drop-on');
+  eatClick=true;setTimeout(()=>eatClick=false,0);
+  if(drop&&d.t){const j=jobs.find(q=>q.id===d.id),s=d.t.dataset.drop;if(j&&s!==j.status)moveJob(j,s)}
+}
+document.addEventListener('pointerdown',e=>{
+  const it=e.target.closest('[data-drag]');if(!it||(e.pointerType==='mouse'&&e.button!==0)||e.target.closest('[data-del]'))return;
+  drag={el:it,id:+it.dataset.drag,x:e.clientX,y:e.clientY,on:false,touch:e.pointerType!=='mouse'};
+  if(drag.touch)drag.timer=setTimeout(dragStart,380);
+});
+document.addEventListener('pointermove',e=>{
+  if(!drag)return;const mv=Math.hypot(e.clientX-drag.x,e.clientY-drag.y);
+  if(!drag.on){if(drag.touch){if(mv>8){clearTimeout(drag.timer);drag=null}}else if(mv>6){dragStart()}return}
+  e.preventDefault();dragMove(e.clientX,e.clientY);
+});
+document.addEventListener('pointerup',()=>dragEnd(true));
+document.addEventListener('pointercancel',()=>dragEnd(false));
+document.addEventListener('touchmove',e=>{if(drag?.on)e.preventDefault()},{passive:false});
+document.addEventListener('contextmenu',e=>{if(drag)e.preventDefault()});
+window.addEventListener('click',e=>{if(eatClick){e.stopPropagation();e.preventDefault();eatClick=false}},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&drag?.on){drag.t?.classList.remove('drop-on');drag.t=null;dragEnd(false)}});
