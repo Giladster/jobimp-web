@@ -350,23 +350,24 @@ $('#mic').onclick=e=>{const m=e.currentTarget;if(m.classList.contains('rec'))ret
 
 
 /* accounts: demo (sample data) or Gilad (real data from Gmail + calendar, read only) */
-const DAY=864e5,TODAY=new Date(new Date().toDateString());
+const DAY=864e5;let TODAY=new Date(new Date().toDateString());
+const localIso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const dt=d=>new Date(d+'T00:00:00');
 const fmt=d=>dt(d).toLocaleDateString('en-US',{month:'short',day:'numeric'});
 const daysBetween=(a,b)=>Math.round((dt(b)-dt(a))/DAY);
 const median=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
 function loadReal(data){
   REAL=true;alerts=[];recordings=[];
-  const iso=TODAY.toISOString().slice(0,10);
-  jobs=data.jobs.map((j,i)=>({id:i+1,co:j.co,role:j.role,loc:j.loc||'',src:j.src||'Email',status:j.status,next:j.next||null,
-    applied:j.applied,firstReply:j.firstReply,tl:j.tl,
+  const iso=localIso(TODAY);
+  jobs=data.jobs.map((j,i)=>({id:i+1,co:j.co,role:j.role,loc:j.loc||'',src:j.src||'Email',status:j.status,next:null,nextRaw:j.next||null,
+    applied:j.applied,firstReply:j.firstReply,tl0:j.tl.map(t=>[...t]),tl:j.tl.map(t=>[...t]),
     days:j.applied?daysBetween(j.applied,iso):null,
     replied:j.applied&&j.firstReply?daysBetween(j.applied,j.firstReply):null,
     since:!j.applied&&j.firstReply?fmt(j.firstReply):null}));
   const r=jobs.filter(j=>j.replied!=null).map(j=>j.replied).sort((a,b)=>a-b);
   const q=f=>r.length?r[Math.min(r.length-1,Math.floor(f*r.length))]:7;
   const band=[q(.25),median(r)??7,q(.75)];REPLY={};jobs.forEach(j=>REPLY[j.co]=band);
-  jobTab='interview';applyHidden();
+  jobTab='interview';applyHidden();refreshTime();
 }
 function loadDemo(){REAL=false;jobs=DEMO_JOBS.map(j=>({...j,tl:[...j.tl]}));alerts=DEMO_ALERTS.map(a=>({...a}));recordings=[...DEMO_RECS];REPLY=DEMO_REPLY;jobTab='applied';applyHidden()}
 function realStats(){
@@ -378,7 +379,7 @@ function realStats(){
 function attentionList(){
   const out=[];
   jobs.filter(j=>j.next).forEach(j=>out.push([`${j.co} interview ${j.next}`,'go:open:'+j.id]));
-  jobs.filter(j=>j.status==='interview'&&!j.next).forEach(j=>{const last=j.tl[0][0];out.push([`${j.co} is quiet since ${last}. Follow up?`,'go:open:'+j.id])});
+  jobs.filter(j=>j.status==='interview'&&!j.next).forEach(j=>{const last=j.tl[0][0];out.push([j.doneAt&&(TODAY-j.doneAt)/DAY<=7?`${j.co}: interview done ${last}. Waiting for result`:`${j.co} is quiet since ${last}. Follow up?`,'go:open:'+j.id])});
   realStats().waiting.filter(j=>j.days>=21).sort((a,b)=>b.days-a.days).forEach(j=>out.push([`${j.co}: no reply in ${j.days} days`,'go:open:'+j.id]));
   return out;
 }
@@ -387,7 +388,10 @@ function fastest(){
   return r.slice(0,4).map(j=>`${esc(j.co)} in ${j.replied} day${j.replied===1?'':'s'}`).join(', ')+'.'+(r.length>4?` Slowest: ${esc(r.at(-1).co)}, ${r.at(-1).replied} days.`:'');
 }
 function realNudge(j){
-  if(j.status==='interview')return j.next?`Next: ${esc(j.next)}. Want help to prep?`:`No news since ${esc(j.tl[0][0])}. A short follow-up could help.`;
+  if(j.status==='interview'){
+    if(j.next)return /^Today/.test(j.next)?`Interview today at ${esc(j.next.split(', ')[1]||'')}. Good luck! Want a quick prep?`:`Next: ${esc(j.next)}. Want help to prep?`;
+    if(j.doneAt&&(TODAY-j.doneAt)/DAY<=7)return `Interview done on ${esc(j.tl[0][0])}. Waiting for their answer. I'll nudge you if it takes long.`;
+    return `No news since ${esc(j.tl[0][0])}. A short follow-up could help.`;}
   if(j.status==='applied')return `No reply in ${j.days} days.${j.days>=21?' Half the companies that answered you did it within '+(median(jobs.filter(x=>x.replied!=null).map(x=>x.replied))??7)+' days.':''}`;
   if(j.status==='closed')return j.replied!=null?`They answered on day ${j.replied}.`:`Closed. I can show what to change for similar roles.`;
   return 'Ask me anything about this job.';
@@ -492,3 +496,30 @@ function undoRemove(){
   render();toast(`${j.co} is back`);
 }
 document.addEventListener('keydown',e=>{const d=e.target.closest?.('[data-del]');if(d&&(e.key==='Enter'||e.key===' ')){e.preventDefault();e.stopPropagation();removeJob(+d.dataset.del)}},true);
+
+/* time: labels follow the clock. Re-checks every minute, re-renders when something changes. */
+function parseNext(str){
+  const m=/([A-Z][a-z]{2})\s+(\d{1,2}),\s*(\d{1,2}):(\d{2})/.exec(str||'');if(!m)return null;
+  const d=tlDate(m[1]+' '+m[2]);if(!d)return null;d.setHours(+m[3],+m[4],0,0);return d;
+}
+function refreshTime(){
+  if(!REAL)return false;
+  const now=new Date();TODAY=new Date(now.toDateString());const iso=localIso(TODAY);
+  const before=JSON.stringify(jobs.map(j=>[j.next,j.days,j.tl]));
+  const tmr=new Date(TODAY.getTime()+DAY);
+  jobs.forEach(j=>{
+    if(j.applied)j.days=daysBetween(j.applied,iso);
+    const at=parseNext(j.nextRaw);j.next=null;j.doneAt=null;
+    if(at){const hm=at.toTimeString().slice(0,5),end=new Date(at.getTime()+90*60e3);
+      if(now>end)j.doneAt=new Date(at.toDateString());
+      else if(at.toDateString()===TODAY.toDateString())j.next=`Today, ${hm}`;
+      else if(at.toDateString()===tmr.toDateString())j.next=`Tomorrow, ${hm}`;
+      else{const n=Math.round((new Date(at.toDateString())-TODAY)/DAY);j.next=`${j.nextRaw} · in ${n} days`}}
+    j.tl=j.tl0.map(([d,x])=>{if(!/\(coming up\)/.test(x))return[d,x];const dd=tlDate(d);
+      if(!dd||dd>TODAY)return[d,x];
+      if(dd.getTime()===TODAY.getTime()&&!j.doneAt)return[d,x.replace('(coming up)','(today)')];
+      return[d,x.replace(/^Next /,'').replace(/\s*\(coming up\)/,'').replace(/^./,c=>c.toUpperCase())+' (done)']});
+  });
+  return before!==JSON.stringify(jobs.map(j=>[j.next,j.days,j.tl]));
+}
+setInterval(()=>{if(REAL&&$('#login').hidden&&refreshTime()){const keep=$('#main').scrollTop;render();$('#main').scrollTop=keep}},60e3);
