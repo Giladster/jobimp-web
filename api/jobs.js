@@ -24,8 +24,10 @@ module.exports = A.handle(async (req, res) => {
       try { await S.catchUp(user); } catch (e) { console.error('catch up failed', e.message); }
     }
     if (req.query?.log) {
-      const { rows } = await q('select at, src, item_at, sender, subject, result from ai_log where user_id=$1 order by id desc limit 300', [user.id]);
-      return res.status(200).json({ log: rows });
+      const limit = Math.min(50, Math.max(1, +req.query.limit || 15)), offset = Math.max(0, +req.query.offset || 0);
+      const { rows } = await q('select at, src, item_at, sender, subject, result from ai_log where user_id=$1 order by id desc limit $2 offset $3', [user.id, limit, offset]);
+      const { rows: c } = await q('select count(*)::int as n from ai_log where user_id=$1', [user.id]);
+      return res.status(200).json({ log: rows, total: c[0].n });
     }
     try { await S.autoClose(user); } catch (e) { console.error('auto close failed', e.message); }
     const v = await version(user.id);

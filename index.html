@@ -341,7 +341,18 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .sw:hover{color:var(--ink)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .gsync{font-size:12.5px;color:var(--faint);padding:10px 10px 8px;display:flex;align-items:center;gap:7px;line-height:1.3}
+/* collapsible: smooth open/close for any section */
+.coll{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .32s cubic-bezier(.2,.7,.2,1),opacity .24s ease;visibility:hidden}
+.coll.open{grid-template-rows:1fr;opacity:1;visibility:visible}
+.coll>div{overflow:hidden;min-height:0}
+.coll:not(.open){transition:grid-template-rows .28s cubic-bezier(.4,0,.2,1),opacity .2s ease,visibility 0s .28s}
+#logBody{overflow:hidden}
 /* settings */
+.logh{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:6px}
+.pbtn.sm{font-size:14px;padding:7px 14px;flex:none}
+.logpad{padding:10px 0}
+.logf{display:flex;align-items:center;gap:16px;padding:14px 0 4px;font-size:13.6px;color:var(--faint)}
+.logf .link:disabled{color:var(--faint);opacity:.5;cursor:default}
 .setrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:15.5px;color:var(--muted);padding:6px 0}
 .setrow input{width:72px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:8px 10px;font:inherit;font-size:15px;text-align:center}
 .logr{padding:13px 0;border-bottom:1px solid var(--line)}
@@ -399,8 +410,10 @@ a.acc{text-decoration:none;color:inherit}
     <h1>Choose an account</h1>
     <p>Pick the sample data or your real job search.</p>
     <button class="acc" data-acc="gilad"><div class="av">G</div><div class="txt"><div class="t1">Gilad</div><div class="t2">Real data from your Gmail and calendar</div></div><span class="chev">›</span></button>
-    <form class="pw" id="pwRow" hidden><input id="pw" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password"><button class="pbtn pri">Sign in</button></form>
-    <label class="rem" id="remRow" hidden><input type="checkbox" id="rem" checked> Remember me on this device</label>
+    <div class="coll" id="pwColl"><div>
+    <form class="pw" id="pwRow"><input id="pw" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password"><button class="pbtn pri">Sign in</button></form>
+    <label class="rem" id="remRow"><input type="checkbox" id="rem" checked> Remember me on this device</label>
+    </div></div>
     <div class="lerr" id="loginErr" role="status"></div>
     <a class="acc gbtn" id="gBtn" href="/api/google?start=1" hidden><div class="av g">G</div><div class="txt"><div class="t1">Continue with Google</div><div class="t2">Reads your job emails and calendar. Read only.</div></div><span class="chev">›</span></a>
     <button class="acc" data-acc="demo"><div class="av">D</div><div class="txt"><div class="t1">Demo account</div><div class="t2">Sample jobs, nothing real</div></div><span class="chev">›</span></button>

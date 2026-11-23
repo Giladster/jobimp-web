@@ -19,7 +19,7 @@ const DEMO_ALERTS=[
  {id:'a7',co:'Taboola',role:'Product Manager, Ads',loc:'Tel Aviv',hrs:52,src:'AllJobs',tag:'new'},
 ];
 const DEMO_RECS=[{id:'r1',co:'Monday.com',label:'1st round with Noa',date:'Nov 12',mins:42,score:74}];
-let jobs=[],alerts=[],recordings=[],REAL=false,REPLY={},ME='',GOOGLE={},VER='',SETTINGS={closeDays:16},LOG=null;
+let jobs=[],alerts=[],recordings=[],REAL=false,REPLY={},ME='',GOOGLE={},VER='',SETTINGS={closeDays:16};
 const DEMO_REPLY={Wix:[4,6,8],Riskified:[3,5,7],'Monday.com':[2,4,6],Playtika:[8,12,16],Gong:[5,9,13],Lemonade:[3,6,9],Fiverr:[3,5,8],Similarweb:[3,5,7]};
 let tlMode='Timeline';
 let view='today',jobsMode='list',jobTab='applied',srcTab='All',curJob=null,scope='main',recMode=0;
@@ -35,7 +35,7 @@ function toast(t,undo){const el=$('#toast');el.innerHTML=esc(t)+(undo?' <button 
 
 /* navigation */
 function show(v,keepScope){
-  view=v;closeModal();if(v==='settings')LOG=null;
+  view=v;closeModal();if(v==='settings'){LOGST.open=false;LOGST.rows=null}
   document.querySelectorAll('.nv').forEach(b=>b.classList.toggle('on',b.dataset.v===(v==='job'?'jobs':v)));
   $('#main').scrollTop=0;
   if(!keepScope)setScope(v==='job'?'j'+curJob.id:'main');
@@ -433,7 +433,7 @@ function startApp(){
   view='today';curJob=null;for(const k in threads)delete threads[k];
   setScope('main');show('today');
 }
-function showLogin(){$('#login').hidden=false;$('#pwRow').hidden=true;$('#remRow').hidden=true;$('#loginErr').textContent='';$('#gBtn').hidden=!GOOGLE_ON}
+function showLogin(){$('#login').hidden=false;$('#pwColl').classList.remove('open');$('#loginErr').textContent='';$('#gBtn').hidden=!GOOGLE_ON}
 const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}},del:k=>{try{localStorage.removeItem(k)}catch{}}};
 let GOOGLE_ON=false;
 async function api(path,body){
@@ -448,7 +448,7 @@ async function openReal(){
 }
 $('#login').addEventListener('click',async e=>{
   if(e.target.closest('[data-acc="demo"]')){if($('#rem').checked)store.set('jobimp-account','demo');loadDemo();startApp();return}
-  if(e.target.closest('[data-acc="gilad"]')){$('#pwRow').hidden=false;$('#remRow').hidden=false;$('#pw').focus();return}
+  if(e.target.closest('[data-acc="gilad"]')){$('#pwColl').classList.add('open');setTimeout(()=>$('#pw').focus(),60);return}
 });
 $('#pwRow').onsubmit=async e=>{
   e.preventDefault();const err=$('#loginErr');err.textContent='Checking…';
@@ -554,18 +554,55 @@ function visualTimeline(j){
 
 function renderSettings(){
   const d=REAL?SETTINGS.closeDays:(+store.get('jobimp-close-demo')||16);
-  const logH=!REAL?'':LOG===null?'<div class="t2">Loading…</div>':!LOG.length?`<div class="t2">${GOOGLE.connected?(GOOGLE.ai===false?'Waiting for the AI key. Nothing was read yet.':'Nothing read yet.'):'Connect Gmail to see what Claude reads.'}</div>`:
-    LOG.map(l=>{const r={...(l.result||{})};r.did=oldDid(r);const off=/^(Ignored|Skipped|No change)/.test(r.did||'');
-      return `<div class="logr"><div class="t1">${esc(l.subject||'(no subject)')}</div><div class="t3">${l.src==='calendar'?'Calendar':'Gmail'} · ${esc(l.item_at?new Date(l.item_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'')} · ${esc(String(l.sender||'').replace(/\s*<[^>]*>/,'').replace(/^"|"$/g,'')||'')}</div>
-        <div class="did${off?' off':''}"><b>Decision:</b> ${esc(r.did||'')}</div>${r.why?`<div class="why"><b>Why:</b> ${esc(r.why)}</div>`:''}</div>`}).join('');
   $('#page').innerHTML=`<div class="ph"><h1>Settings</h1></div>
     <div class="lbl" style="margin-top:0">Auto-close</div>
     <div class="setrow">Move a job to Closed after <input id="closeDays" type="number" min="0" max="365" value="${d}"> days with no news.<button class="pbtn" id="saveClose">Save</button></div>
     <div class="foot" style="margin-top:6px">Counts from the last email, interview or move. 0 means never.</div>
-    ${REAL?`<div class="lbl">Email log</div><div class="t2" style="margin-bottom:6px">Every job email Claude read: what it changed in your jobs, and why. Nothing is ever changed in Gmail.</div><div>${logH}</div>`:''}`;
+    ${REAL?`<div class="lbl">Email log</div>
+      <div class="logh"><div class="t2">What the Agent read in your email, what it changed in your jobs, and why. Nothing is changed in Gmail.</div>
+      <button class="pbtn sm" id="logTog" aria-expanded="${LOGST.open}">${LOGST.open?'Hide log':'Show log'}</button></div>
+      <div class="coll${LOGST.open?' open':''}" id="logColl"><div><div id="logBody">${logHtml()}</div></div></div>`:''}`;
   $('#saveClose').onclick=saveClose;
-  if(REAL&&LOG===null)api('/api/jobs?log=1').then(r=>{LOG=r.log||[];if(view==='settings')renderSettings()}).catch(()=>{LOG=[];if(view==='settings')renderSettings()});
+  if(REAL)$('#logTog').onclick=toggleLog;
 }
+/* email log: closed by default; open shows the last 5, "Show more" shows 15 per page with Older / Newer */
+const LOGST={open:false,mode:'peek',page:0,rows:null,total:0};
+const LOG_PAGE=15,LOG_PEEK=5;
+function logHtml(){
+  const L=LOGST;
+  if(L.rows===null)return '<div class="t2 logpad">Loading…</div>';
+  if(!L.rows.length)return `<div class="t2 logpad">${GOOGLE.connected?(GOOGLE.ai===false?'Waiting for the AI key. Nothing was read yet.':'Nothing read yet.'):'Connect Gmail to see what the Agent reads.'}</div>`;
+  const rows=L.rows.map(l=>{const r={...(l.result||{})};r.did=oldDid(r);const off=/^(Ignored|Skipped|No change)/.test(r.did||'');
+    return `<div class="logr"><div class="t1">${esc(l.subject||'(no subject)')}</div><div class="t3">${l.src==='calendar'?'Calendar':'Gmail'} · ${esc(l.item_at?new Date(l.item_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'')} · ${esc(String(l.sender||'').replace(/\s*<[^>]*>/,'').replace(/^"|"$/g,'')||'')}</div>
+      <div class="did${off?' off':''}"><b>Decision:</b> ${esc(r.did||'')}</div>${r.why?`<div class="why"><b>Why:</b> ${esc(r.why)}</div>`:''}</div>`}).join('');
+  let foot='';
+  if(L.mode==='peek'){if(L.total>LOG_PEEK)foot=`<button class="link" data-lg="more">Show more</button>`}
+  else{const from=L.page*LOG_PAGE+1,to=Math.min(L.total,from+L.rows.length-1);
+    foot=`<button class="link" data-lg="newer"${L.page?'':' disabled'}>Newer</button><span>${from}–${to} of ${L.total}</span><button class="link" data-lg="older"${to<L.total?'':' disabled'}>Older</button>`}
+  return rows+(foot?`<div class="logf">${foot}</div>`:'');
+}
+async function loadLog(){
+  const L=LOGST,limit=L.mode==='peek'?LOG_PEEK:LOG_PAGE,offset=L.mode==='peek'?0:L.page*LOG_PAGE;
+  try{const r=await api(`/api/jobs?log=1&limit=${limit}&offset=${offset}`);L.rows=r.log||[];L.total=r.total||0}catch{L.rows=[];L.total=0}
+}
+// Changes the log's content and animates its height to the new size.
+function swapLog(){
+  const box=$('#logBody');if(!box)return;
+  const h0=box.offsetHeight;box.innerHTML=logHtml();const h1=box.offsetHeight;
+  if(h0!==h1&&$('#logColl').classList.contains('open')&&box.animate)box.animate([{height:h0+'px'},{height:h1+'px'}],{duration:300,easing:'cubic-bezier(.2,.7,.2,1)'});
+}
+async function toggleLog(){
+  const L=LOGST,c=$('#logColl'),b=$('#logTog');L.open=!L.open;
+  b.textContent=L.open?'Hide log':'Show log';b.setAttribute('aria-expanded',L.open);
+  if(L.open){L.mode='peek';L.page=0;L.rows=null;$('#logBody').innerHTML=logHtml();c.classList.add('open');await loadLog();if(L.open)swapLog()}
+  else c.classList.remove('open');
+}
+document.addEventListener('click',async e=>{
+  const g=e.target.closest('[data-lg]');if(!g||g.disabled)return;
+  const L=LOGST,k=g.dataset.lg;
+  if(k==='more'){L.mode='pages';L.page=0}else if(k==='older')L.page++;else if(k==='newer')L.page=Math.max(0,L.page-1);
+  g.disabled=true;await loadLog();swapLog();
+});
 // Log rows saved before the clearer wording.
 const SLAB={saved:'Saved',applied:'Awaiting reply',interview:'Interview',offer:'Offer',closed:'Closed'};
 function oldDid(r){const d=r.did||'';let m;
