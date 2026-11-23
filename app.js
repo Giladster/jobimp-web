@@ -657,6 +657,7 @@ async function pull(force,fresh){
     loadReal(d);jobTab=keepTab;
     if(keepView==='job'){curJob=jobs.find(j=>j.id===keepJob)||null;view=curJob?'job':'jobs'}else view=keepView;
     render();renderGoogle();$('#main').scrollTop=keep;
+    if(GOOGLE.importing&&GOOGLE.ai!==false&&!importing)runImport();
   }catch(x){if(x.status===401){signOut();showLogin()}}
 }
 // Check for news every 20 s while the app is open (asks Gmail directly every 2 min, in case a ping was missed).
@@ -750,17 +751,10 @@ function renderSettings(){
       <div class="logh"><div class="t2">What the Agent read in your email, what it changed in your jobs, and why. Nothing is changed in Gmail.</div>
       <button class="pbtn sm" id="logTog" aria-expanded="${LOGST.open}">${LOGST.open?'Hide log':'Show log'}</button></div>
       <div class="coll${LOGST.open?' open':''}" id="logColl"><div><div id="logBody">${logHtml()}</div></div></div>
-      ${GOOGLE.connected?`<div class="lbl">Re-read Gmail</div>
-      <div class="logh"><div class="t2">Rebuild My jobs from your Gmail and Calendar (last 6 months), including emails you sent. Your current list is saved first.</div>
-      <button class="pbtn sm" id="reread">Re-read all</button></div>
-      ${SETTINGS.backup?`<button class="link" id="restore" style="font-size:13.8px">Bring back my previous list</button>`:''}`:''}`:''}`;
+`:''}`;
   $('#saveClose').onclick=saveClose;
   if(REAL)$('#logTog').onclick=toggleLog;
   if(REAL){$('#alogTog').onclick=toggleALog;$('#popTog').onclick=e=>{const on=!popOn();store.set('jobimp-agent-pop',on?'on':'off');e.currentTarget.classList.toggle('on',on);e.currentTarget.setAttribute('aria-checked',on);toast(on?'Pop-ups on':'Pop-ups off')}}
-  const rr=$('#reread');if(rr)rr.onclick=()=>{
-    openModal('Re-read all Gmail?',`<div class="t2" style="margin-bottom:18px">My jobs will be rebuilt from your Gmail and Calendar (last 6 months). Edits and moves you made by hand will be replaced. Your current list is saved, and you can bring it back here.</div><button class="pbtn pri" id="rrGo">Yes, re-read</button>`);
-    $('#rrGo').onclick=async()=>{try{$('#rrGo').disabled=true;await api('/api/jobs',{op:'rebuild'});closeModal();LOGST.rows=null;await pull(true);toast('Reading your Gmail again…');runImport()}catch(x){toast(x.message||'Could not start.')}}};
-  const rs=$('#restore');if(rs)rs.onclick=async()=>{try{await api('/api/jobs',{op:'restore'});await pull(true);toast('Your previous list is back')}catch(x){toast(x.message||'Could not bring it back.')}};
 }
 /* Agent log: every change the Agent made, newest first, with Undo */
 const ALOG={open:false,rows:null,total:0,page:0};

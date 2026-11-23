@@ -72,6 +72,11 @@ module.exports = A.handle(async (req, res) => {
       try { await S.startWatches(user, user.push_base || G.baseUrl(req)); } catch (e) { console.error('watch upgrade failed', e.message); }
       await q('update users set watch_v=2 where id=$1', [user.id]); // try once; the daily renewal covers a failure
     }
+    // Lists read with the older rules: re-read Gmail once with the new privacy rules (old list kept in jobs_backup).
+    if (user.refresh_enc && user.reread_v < 2 && !user.import_state && hasKey()) {
+      await q('update users set reread_v=2 where id=$1', [user.id]);
+      await S.rebuild(user, 180); user.import_state = {};
+    }
     const v = await version(user.id);
     if (req.query?.v && req.query.v === v) return res.status(200).json({ same: true, v });
     const { rows } = await q('select * from jobs where user_id=$1 and not removed order by updated_at desc, id', [user.id]);
