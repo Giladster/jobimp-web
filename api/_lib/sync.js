@@ -2,7 +2,7 @@
 const crypto = require('crypto');
 const { q } = require('./db');
 const { gapi, getMessage, GM, CAL } = require('./google');
-const { classify } = require('./ai');
+const { classify, hasKey } = require('./ai');
 const { signValue } = require('./auth');
 
 /* ---------- dates in the user's time zone ---------- */
@@ -86,6 +86,30 @@ async function applyEvent(user, ev, jobs) {
   return j;
 }
 
+/* ---------- auto-close: no news for X days (user setting) -> Closed ---------- */
+async function autoClose(user) {
+  const days = +user.close_days; if (!(days > 0)) return 0;
+  const tz = user.tz || 'Asia/Jerusalem', now = new Date();
+  const today = Date.UTC(...isoDay(now, tz).split('-').map((v, k) => k === 1 ? v - 1 : +v));
+  const { rows } = await q(`select * from jobs where user_id=$1 and not removed and status in ('applied','interview')`, [user.id]);
+  let n = 0;
+  for (const j of rows) {
+    const tl = Array.isArray(j.tl) ? j.tl : [];
+    const dates = tl.map(e => labelDate(e[0], now)).filter(Boolean);
+    if (dates.some(d => d > today)) continue; // an interview is still ahead
+    if (j.next_raw) { const m = /^\w{3} ([A-Z][a-z]{2} \d{1,2})/.exec(j.next_raw); if (m && labelDate(m[1], now) >= today) continue; }
+    [j.applied, j.first_reply].forEach(d => { if (d) dates.push(Date.UTC(...String(d).slice(0, 10).split('-').map((v, k) => k === 1 ? v - 1 : +v))); });
+    if (!dates.length) continue;
+    const last = Math.max(...dates);
+    if ((today - last) / 864e5 <= days) continue;
+    const at = new Date(last + days * 864e5);
+    const note = [`${MON[at.getUTCMonth()]} ${at.getUTCDate()}`, `Closed: no news for ${days} days`];
+    await q(`update jobs set status='closed', next_raw=null, tl=$2, updated_at=now() where id=$1`, [j.id, JSON.stringify([note, ...tl].slice(0, 40))]);
+    n++;
+  }
+  return n;
+}
+
 /* ---------- Gmail ---------- */
 const JOBBY = /(application|applying|applied|interview|candidate|candidacy|position|role|recruit|hiring|talent|career|opportunit|assignment|home task|offer|thank you for your interest|unfortunately|next steps|move forward|ראיון|מועמד|משרה|תפקיד|קורות חיים|גיוס)/i;
 const SKIP_LABELS = ['SPAM', 'TRASH', 'SENT', 'DRAFT', 'CHAT', 'CATEGORY_PROMOTIONS'];
@@ -114,12 +138,26 @@ async function classifyAndApply(user, items) {
   const batches = []; for (let i = 0; i < items.length; i += 8) batches.push(items.slice(i, i + 8).map((x, k) => ({ ...x, i: k })));
   const results = (await pool(batches, 3, b => classify(b, known))).flat();
   results.sort((a, b) => a.date - b.date);
-  let n = 0;
+  let n = 0; const logs = [];
   for (const r of results) {
-    if (!r.job_related || !r.company || r.kind === 'none') continue;
-    if (await applyEvent(user, { ...r, extId: r.extId, src: r.src }, jobs)) n++;
+    let did = 'Ignored: not about your applications';
+    if (r.job_related && !r.company) did = 'Ignored: company unclear';
+    else if (r.job_related && r.kind !== 'none') {
+      const had = new Set(jobs.map(j => j.id));
+      const j = await applyEvent(user, { ...r, extId: r.extId, src: r.src }, jobs);
+      if (j) { n++; did = (had.has(j.id) ? 'Updated ' : 'New job: ') + j.co + ' (' + j.status + ')'; } else did = 'No change';
+    }
+    logs.push([r.src, r.date, String(r.from || '').slice(0, 200), String(r.subject || '').slice(0, 300),
+      JSON.stringify({ did, company: r.company || '', role: r.role || '', kind: r.kind || 'none', note: r.note || '', why: r.why || '' })]);
   }
+  await writeLog(user, logs);
   return n;
+}
+async function writeLog(user, rows) {
+  if (!rows.length) return;
+  const cols = ['src', 'item_at', 'sender', 'subject', 'result'];
+  await q(`insert into ai_log (user_id, ${cols.join(', ')}) select $1, * from unnest($2::text[], $3::timestamptz[], $4::text[], $5::text[], $6::jsonb[])`,
+    [user.id, ...cols.map((_, k) => rows.map(r => r[k]))]);
 }
 
 async function processMessages(user, ids) {
@@ -168,6 +206,7 @@ async function processEvents(user, events) {
 
 /* ---------- first import, step by step (called again and again by the app until done) ---------- */
 async function importStep(user) {
+  if (!hasKey()) return { done: false, waiting: 'ai', read: 0, updates: 0 };
   const st = user.import_state || { phase: 'gmail', n: 0, jobs: 0 };
   const from = user.synced_from ? new Date(user.synced_from) : new Date(Date.now() - 180 * 864e5);
   if (!user.gmail_history) {
@@ -196,6 +235,8 @@ async function importStep(user) {
 
 /* ---------- catch up: new mail since the last history id, calendar changes since last check ---------- */
 async function catchUp(user, historyHint) {
+  // No AI key yet: read nothing. Gmail keeps the place, so mail from now on is read once the key is set.
+  if (!hasKey()) return 0;
   let n = 0;
   if (user.gmail_history) {
     const ids = []; let page = null, latest = user.gmail_history, gone = false;
@@ -251,4 +292,4 @@ async function startWatches(user, base) {
   return out;
 }
 
-module.exports = { importStep, catchUp, startWatches, processEvents, applyEvent, nextRaw, fromLocal, label };
+module.exports = { autoClose, importStep, catchUp, startWatches, processEvents, applyEvent, nextRaw, fromLocal, label };

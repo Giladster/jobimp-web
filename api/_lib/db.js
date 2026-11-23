@@ -56,7 +56,19 @@ create table if not exists seen (
   ext_id text not null,
   at timestamptz not null default now(),
   primary key (user_id, src, ext_id)
-);`;
+);
+alter table users add column if not exists close_days int not null default 16;
+create table if not exists ai_log (
+  id serial primary key,
+  user_id text not null references users(id) on delete cascade,
+  at timestamptz not null default now(),
+  src text not null,
+  item_at timestamptz,
+  sender text,
+  subject text,
+  result jsonb
+);
+create index if not exists ai_log_user on ai_log (user_id, id desc);`;
 
 async function q(text, params) {
   const p = getPool();

@@ -341,6 +341,15 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .sw:hover{color:var(--ink)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .gsync{font-size:12.5px;color:var(--faint);padding:10px 10px 8px;display:flex;align-items:center;gap:7px;line-height:1.3}
+/* settings */
+.setrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:15.5px;color:var(--muted);padding:6px 0}
+.setrow input{width:72px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:8px 10px;font:inherit;font-size:15px;text-align:center}
+.logr{padding:13px 0;border-bottom:1px solid var(--line)}
+.logr:last-child{border-bottom:0}
+.logr .t1{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logr .did{font-size:14px;color:var(--ink);margin-top:4px}
+.logr .did.off{color:var(--faint)}
+.logr .t3{margin-top:3px}
 .gsync .glink{color:inherit;text-decoration:underline;text-underline-offset:3px}
 .gdot{width:7px;height:7px;border-radius:50%;background:#3fb27f;flex:none}
 .gdot.off{background:#666}.gdot.busy{background:#e0a84a;animation:gpulse 1.2s ease-in-out infinite}
@@ -357,6 +366,7 @@ a.acc{text-decoration:none;color:inherit}
       <button class="nv" data-v="jobs"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7V5.5A1.5 1.5 0 0 1 10 4h4a1.5 1.5 0 0 1 1.5 1.5V7"/></svg>My jobs<span class="ct" id="jobsCt"></span></button>
       <button class="nv" data-v="interview"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Interviews</button>
       <button class="nv" data-v="stats"><svg class="i" viewBox="0 0 24 24"><path d="M5 20V12M12 20V5M19 20v-9"/></svg>Stats</button>
+      <button class="nv" data-v="settings"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</button>
     </nav>
     <div class="sideh">Active jobs</div>
     <div class="sjobs" id="sjobs"></div>

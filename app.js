@@ -19,7 +19,7 @@ const DEMO_ALERTS=[
  {id:'a7',co:'Taboola',role:'Product Manager, Ads',loc:'Tel Aviv',hrs:52,src:'AllJobs',tag:'new'},
 ];
 const DEMO_RECS=[{id:'r1',co:'Monday.com',label:'1st round with Noa',date:'Nov 12',mins:42,score:74}];
-let jobs=[],alerts=[],recordings=[],REAL=false,REPLY={},ME='',GOOGLE={},VER='';
+let jobs=[],alerts=[],recordings=[],REAL=false,REPLY={},ME='',GOOGLE={},VER='',SETTINGS={closeDays:16},LOG=null;
 const DEMO_REPLY={Wix:[4,6,8],Riskified:[3,5,7],'Monday.com':[2,4,6],Playtika:[8,12,16],Gong:[5,9,13],Lemonade:[3,6,9],Fiverr:[3,5,8],Similarweb:[3,5,7]};
 let tlMode='Timeline';
 let view='today',jobsMode='list',jobTab='applied',srcTab='All',curJob=null,scope='main',recMode=0;
@@ -35,7 +35,7 @@ function toast(t,undo){const el=$('#toast');el.innerHTML=esc(t)+(undo?' <button 
 
 /* navigation */
 function show(v,keepScope){
-  view=v;closeModal();
+  view=v;closeModal();if(v==='settings')LOG=null;
   document.querySelectorAll('.nv').forEach(b=>b.classList.toggle('on',b.dataset.v===(v==='job'?'jobs':v)));
   $('#main').scrollTop=0;
   if(!keepScope)setScope(v==='job'?'j'+curJob.id:'main');
@@ -43,7 +43,7 @@ function show(v,keepScope){
 }
 function render(anim){
   const p=$('#page');p.classList.toggle('wide',view==='jobs'&&jobsMode==='board');
-  ({today:renderToday,alerts:renderAlerts,jobs:renderJobs,job:renderJob,interview:renderInterview,stats:renderStats})[view]();
+  ({today:renderToday,alerts:renderAlerts,jobs:renderJobs,job:renderJob,interview:renderInterview,stats:renderStats,settings:renderSettings})[view]();
   if(anim){p.classList.remove('anim');void p.offsetWidth;p.classList.add('anim')}
   renderSide();renderSugg();
 }
@@ -359,7 +359,7 @@ const fmt=d=>dt(d).toLocaleDateString('en-US',{month:'short',day:'numeric'});
 const daysBetween=(a,b)=>Math.round((dt(b)-dt(a))/DAY);
 const median=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
 function loadReal(data){
-  REAL=true;alerts=[];recordings=[];ME=data.name||'You';GOOGLE=data.google||{};VER=data.v||'';
+  REAL=true;alerts=[];recordings=[];ME=data.name||'You';GOOGLE=data.google||{};VER=data.v||'';SETTINGS=data.settings||SETTINGS;
   const iso=localIso(TODAY);
   jobs=data.jobs.map((j,i)=>({id:j.id??i+1,co:j.co,role:j.role,loc:j.loc||'',src:j.src||'Email',status:j.status,next:null,nextRaw:j.next||null,
     applied:j.applied,firstReply:j.firstReply,tl0:j.tl.map(t=>[...t]),tl:j.tl.map(t=>[...t]),
@@ -444,7 +444,7 @@ function signOut(){store.del('jobimp-token');store.del('jobimp-account');api('/a
 async function openReal(){
   const d=await api('/api/jobs');loadReal(d);startApp();
   try{api('/api/jobs',{op:'tz',tz:Intl.DateTimeFormat().resolvedOptions().timeZone})}catch{}
-  if(GOOGLE.importing)runImport();
+  if(GOOGLE.importing&&GOOGLE.ai!==false)runImport();
 }
 $('#login').addEventListener('click',async e=>{
   if(e.target.closest('[data-acc="demo"]')){if($('#rem').checked)store.set('jobimp-account','demo');loadDemo();startApp();return}
@@ -495,12 +495,13 @@ function renderGoogle(){
   el.hidden=false;
   if(!GOOGLE.available){el.innerHTML=`<span class="gdot off"></span>Gmail not linked yet`;return}
   if(!GOOGLE.connected){el.innerHTML=`<a class="glink" href="/api/google?start=1">Connect Gmail &amp; Calendar</a>`;return}
+  if(GOOGLE.ai===false){el.innerHTML=`<span class="gdot off"></span>Gmail linked · waiting for AI key`;el.title=`Read only: ${GOOGLE.email||''}`;return}
   el.innerHTML=importing||GOOGLE.importing?`<span class="gdot busy"></span>Reading your Gmail…`:`<span class="gdot"></span>Gmail live · ${esc(agoMin(GOOGLE.lastSync)||'waiting')}`;
   el.title=`Read only: ${GOOGLE.email||''}`;
 }
 async function runImport(){
   if(importing)return;importing=true;renderGoogle();
-  try{for(let k=0;k<200;k++){const r=await api('/api/jobs',{op:'sync'});await pull(true);if(r.done)break;
+  try{for(let k=0;k<200;k++){const r=await api('/api/jobs',{op:'sync'});if(r.waiting){importing=false;renderGoogle();return}await pull(true);if(r.done)break;
       const el=$('#gsync');if(el)el.innerHTML=`<span class="gdot busy"></span>Reading… ${r.read||0} checked`}
     toast('Done reading your Gmail and calendar');
   }catch(x){toast(x.message||'Could not read Gmail right now.')}
@@ -547,6 +548,29 @@ function visualTimeline(j){
     else h+=`<div class="ve${e.d>t0?' fut':''}${/reject|closed/i.test(e.x)?' bad':''}"><i></i><span class="vd">${esc(e.label)}</span><span class="vx">${esc(e.x)}</span></div>`;
   });
   return `<div class="vtl">${h}</div>`;
+}
+
+/* settings: auto-close days, and the email log (what Claude decided for each email) */
+
+function renderSettings(){
+  const d=REAL?SETTINGS.closeDays:(+store.get('jobimp-close-demo')||16);
+  const logH=!REAL?'':LOG===null?'<div class="t2">Loading…</div>':!LOG.length?`<div class="t2">${GOOGLE.connected?(GOOGLE.ai===false?'Waiting for the AI key. Nothing was read yet.':'Nothing read yet.'):'Connect Gmail to see what Claude reads.'}</div>`:
+    LOG.map(l=>{const r=l.result||{},off=/^Ignored|^No change/.test(r.did||'');
+      return `<div class="logr"><div class="t1">${esc(l.subject||'(no subject)')}</div><div class="t3">${l.src==='calendar'?'Calendar':'Gmail'} · ${esc(l.item_at?new Date(l.item_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'')} · ${esc(String(l.sender||'').replace(/\s*<[^>]*>/,'')||'')}</div>
+        <div class="did${off?' off':''}">${esc(r.did||'')}${r.note&&!off?' · '+esc(r.note):''}</div>${r.why?`<div class="t3">${esc(r.why)}</div>`:''}</div>`}).join('');
+  $('#page').innerHTML=`<div class="ph"><h1>Settings</h1></div>
+    <div class="lbl" style="margin-top:0">Auto-close</div>
+    <div class="setrow">Move a job to Closed after <input id="closeDays" type="number" min="0" max="365" value="${d}"> days with no news.<button class="pbtn" id="saveClose">Save</button></div>
+    <div class="foot" style="margin-top:6px">Counts from the last email, interview or move. 0 means never.</div>
+    ${REAL?`<div class="lbl">Email log</div><div class="t2" style="margin-bottom:6px">Each email Claude read, what it decided, and why. Read only.</div><div>${logH}</div>`:''}`;
+  $('#saveClose').onclick=saveClose;
+  if(REAL&&LOG===null)api('/api/jobs?log=1').then(r=>{LOG=r.log||[];if(view==='settings')renderSettings()}).catch(()=>{LOG=[];if(view==='settings')renderSettings()});
+}
+async function saveClose(){
+  const v=Math.round(+$('#closeDays').value);
+  if(!(v>=0&&v<=365)){toast('Pick 0 to 365 days');return}
+  if(!REAL){store.set('jobimp-close-demo',String(v));toast('Saved');return}
+  try{await api('/api/jobs',{op:'settings',closeDays:v});SETTINGS.closeDays=v;toast('Saved');await pull(true)}catch(x){toast(x.message||'Could not save.')}
 }
 
 /* remove a job (trash). Saved per account in this browser only. */

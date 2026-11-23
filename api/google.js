@@ -25,14 +25,15 @@ async function connect(req, res) {
   if (!qy.code || !st || Date.now() - st.t > 15 * 60e3) return to('/?google=failed');
 
   const g = await G.exchangeCode(String(qy.code), redirect);
-  // Which JobImp account? The signed-in one (connect), or the one with this Google login, or a new one.
+  // One account per email address, however you sign in. Which account?
+  // The signed-in one (connecting Gmail), else the one with this Google login or email, else a new one.
   let uid = st.u || null;
-  const { rows: bySub } = await q('select id from users where google_sub=$1', [g.sub]);
-  if (!uid) uid = bySub[0]?.id || null;
-  if (uid && bySub[0] && bySub[0].id !== uid) {
-    const { rows: n } = await q('select count(*)::int as n from jobs where user_id=$1', [bySub[0].id]);
-    if (n[0].n) return to('/?google=taken');
-    await q('delete from users where id=$1', [bySub[0].id]);
+  const { rows: found } = await q('select id from users where google_sub=$1 or lower(google_email)=lower($2) order by (google_sub=$1) desc', [g.sub, g.email || '']);
+  if (!uid) uid = found[0]?.id || null;
+  for (const other of found.filter(r => r.id !== uid)) {
+    // An account made by "Continue with Google" only holds jobs read from Gmail; they are read again into this account.
+    if (!other.id.startsWith('g_')) return to('/?google=taken');
+    await q('delete from users where id=$1', [other.id]);
   }
   if (!uid) {
     uid = 'g_' + g.sub;

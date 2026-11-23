@@ -3,6 +3,7 @@ const { q, err } = require('./_lib/db');
 const A = require('./_lib/auth');
 const G = require('./_lib/google');
 const S = require('./_lib/sync');
+const { hasKey } = require('./_lib/ai');
 
 const STATUSES = ['saved', 'applied', 'interview', 'offer', 'closed'];
 const out = j => ({ id: j.id, co: j.co, role: j.role, src: j.src, status: j.status, applied: j.applied ? iso(j.applied) : null, firstReply: j.first_reply ? iso(j.first_reply) : null, next: j.next_raw, tl: j.tl });
@@ -22,12 +23,17 @@ module.exports = A.handle(async (req, res) => {
     if (req.query?.fresh && user.refresh_enc && !user.import_state && (!user.last_sync || Date.now() - new Date(user.last_sync) > 120e3)) {
       try { await S.catchUp(user); } catch (e) { console.error('catch up failed', e.message); }
     }
+    if (req.query?.log) {
+      const { rows } = await q('select at, src, item_at, sender, subject, result from ai_log where user_id=$1 order by id desc limit 300', [user.id]);
+      return res.status(200).json({ log: rows });
+    }
+    try { await S.autoClose(user); } catch (e) { console.error('auto close failed', e.message); }
     const v = await version(user.id);
     if (req.query?.v && req.query.v === v) return res.status(200).json({ same: true, v });
     const { rows } = await q('select * from jobs where user_id=$1 and not removed order by updated_at desc, id', [user.id]);
     return res.status(200).json({
-      v, name: user.name, jobs: rows.map(out),
-      google: { available: G.configured(), connected: !!user.refresh_enc, email: user.google_email, lastSync: user.last_sync, importing: !!user.import_state },
+      v, name: user.name, jobs: rows.map(out), settings: { closeDays: user.close_days },
+      google: { available: G.configured(), connected: !!user.refresh_enc, email: user.google_email, lastSync: user.last_sync, importing: !!user.import_state, ai: hasKey() },
     });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
@@ -42,6 +48,13 @@ module.exports = A.handle(async (req, res) => {
   if (b.op === 'tz') {
     if (typeof b.tz === 'string' && b.tz.length < 60) { try { new Intl.DateTimeFormat('en', { timeZone: b.tz }); await q('update users set tz=$2 where id=$1', [user.id, b.tz]); } catch {} }
     return res.status(200).json({ ok: true });
+  }
+  if (b.op === 'settings') {
+    const d = Math.round(+b.closeDays);
+    if (!(d >= 0 && d <= 365)) throw err(400, 'Pick 0 to 365 days.');
+    await q('update users set close_days=$2 where id=$1', [user.id, d]);
+    await S.autoClose({ ...user, close_days: d });
+    return res.status(200).json({ ok: true, v: await version(user.id) });
   }
   if (b.op === 'sync') {
     if (!user.refresh_enc) throw err(409, 'Gmail is not connected.');

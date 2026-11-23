@@ -16,5 +16,6 @@ module.exports = A.handle(async (req, res) => {
       report.push({ user: u.id, renewed: w, updates: n });
     } catch (e) { report.push({ user: u.id, error: e.message }); }
   }
+  await q(`delete from ai_log where at < now() - interval '60 days'`).catch(() => {});
   return res.status(200).json({ ok: true, report });
 });
