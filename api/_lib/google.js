@@ -101,4 +101,12 @@ async function getMessage(user, id) {
   return { id: m.id, threadId: m.threadId, labels: m.labelIds || [], at: new Date(+m.internalDate), from: h.from || '', to: h.to || '', cc: h.cc || '', subject: h.subject || '', snippet: m.snippet || '', text: bodyText(m.payload), files: attachmentsOf(m.payload) };
 }
 
-module.exports = { configured, baseUrl, authUrl, exchangeCode, accessToken, remember, gapi, getMessage, GM, CAL, encrypt };
+// Only the envelope: sender, To, Cc, subject and labels. No body, no attachments.
+async function getMeta(user, id) {
+  const p = ['From', 'To', 'Cc', 'Subject'].map(x => `metadataHeaders=${x}`).join('&');
+  const m = await gapi(user, `${GM}/messages/${encodeURIComponent(id)}?format=metadata&${p}`);
+  const h = Object.fromEntries((m.payload?.headers || []).map(x => [x.name.toLowerCase(), x.value]));
+  return { id: m.id, threadId: m.threadId, labels: m.labelIds || [], from: h.from || '', to: h.to || '', cc: h.cc || '', subject: h.subject || '' };
+}
+
+module.exports = { configured, baseUrl, authUrl, exchangeCode, accessToken, remember, gapi, getMessage, getMeta, GM, CAL, encrypt };
