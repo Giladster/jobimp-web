@@ -305,7 +305,8 @@ function jobOf(sc){return sc&&sc[0]==='j'?jobs.find(j=>'j'+j.id===sc):null}
 function bubble(sc,cls,html){const t=thread(sc);const d=document.createElement('div');d.className='msg '+cls;d.innerHTML=html;t.appendChild(d);t.scrollTop=t.scrollHeight;return d}
 function acts(list){return list?`<div class="acts">${list.map((a,i)=>`<button class="act${i===0?' pri':''}" data-cmd="${esc(a[1])}">${esc(a[0])}</button>`).join('')}</div>`:''}
 function say(sc,html,list,extra){bubble(sc,'bot',html+(extra||'')+acts(list))}
-function reply(sc,html,list,extra){const t=bubble(sc,'bot typing','<i></i><i></i><i></i>');setTimeout(()=>{t.remove();say(sc,html,list,extra);render()},600)}
+const fadeOut=el=>new Promise(r=>{el.classList.add('out');setTimeout(()=>{el.remove();r()},180)});
+function reply(sc,html,list,extra){const t=bubble(sc,'bot typing','<i></i><i></i><i></i>');setTimeout(async()=>{await fadeOut(t);say(sc,html,list,extra);render()},600)}
 const REAL_CHIPS={today:['What needs my attention?','Which companies reply fastest?'],alerts:[],jobs:['What needs my attention?','Which companies reply fastest?'],interview:['What needs my attention?'],stats:['Which companies reply fastest?']};
 const CHIPS={today:['What needs my attention?','Which companies reply fastest?'],alerts:['Which job fits me best?','Why is AppsFlyer flagged?','Skip all reposts','Add Similarweb'],
   jobs:['What needs my attention?','Move Riskified to interview'],interview:['Prep Monday.com','What do I repeat most?'],stats:['Best time to apply','Which companies reply fastest?']};
@@ -411,20 +412,20 @@ function undoBtn(id){return id?`<div class="acts"><button class="act" data-aundo
 async function askAgent(raw,sc){
   const h=hist[sc]||(hist[sc]=[]);h.push({role:'user',content:raw});
   const t=bubble(sc,'bot typing','<i></i><i></i><i></i>');const j=jobOf(sc);
-  try{const d=await api('/api/agent',{messages:h.slice(-20),jobId:j?j.id:null,mode:amode(),screen:screenCtx()});t.remove();h.push({role:'assistant',content:d.text});
+  try{const d=await api('/api/agent',{messages:h.slice(-20),jobId:j?j.id:null,mode:amode(),screen:screenCtx()});await fadeOut(t);h.push({role:'assistant',content:d.text});
     if(d.plan){const k=++planN;plans[k]={calls:d.plan,sc,ask:raw};say(sc,agentFmt(d.text),null,`<div class="acts"><button class="act pri" data-aplan="${k}">Do it</button><button class="act" data-acancel="${k}">Cancel</button></div>`)}
     else say(sc,agentFmt(d.text),null,undoBtn(d.undoId));
     const pts=[...d.text.matchAll(/\]\(point:(\d+)\)/g)].map(m=>document.querySelector(`[data-aref="${m[1]}"]`)).filter(Boolean);if(pts.length&&!matchMedia('(max-width:1240px)').matches)pts.forEach(glow);
     afterChange(d)}
-  catch(e){t.remove();h.pop();say(sc,esc(e.status===503?'The AI key is not set yet, so I can’t answer.':'Sorry, I couldn’t answer just now. Try again.'))}
+  catch(e){await fadeOut(t);h.pop();say(sc,esc(e.status===503?'The AI key is not set yet, so I can’t answer.':'Sorry, I couldn’t answer just now. Try again.'))}
 }
 document.addEventListener('click',async e=>{
   const p=e.target.closest('[data-aplan],[data-acancel]'),u=e.target.closest('[data-aundo]');
   if(p){const k=p.dataset.aplan||p.dataset.acancel,pl=plans[k];if(!pl)return;delete plans[k];p.parentElement.remove();const h=hist[pl.sc]||(hist[pl.sc]=[]);
     if(p.dataset.acancel){h.push({role:'user',content:'Cancel that plan.'},{role:'assistant',content:'OK, I changed nothing.'});say(pl.sc,'OK, I changed nothing.');return}
     const t=bubble(pl.sc,'bot typing','<i></i><i></i><i></i>');
-    try{const d=await api('/api/agent',{op:'apply',calls:pl.calls,ask:pl.ask});t.remove();h.push({role:'user',content:'Do it.'},{role:'assistant',content:d.text});say(pl.sc,agentFmt(d.text),null,undoBtn(d.undoId));afterChange(d)}
-    catch(x){t.remove();say(pl.sc,esc(x.message||'Could not do it. Try again.'))}}
+    try{const d=await api('/api/agent',{op:'apply',calls:pl.calls,ask:pl.ask});await fadeOut(t);h.push({role:'user',content:'Do it.'},{role:'assistant',content:d.text});say(pl.sc,agentFmt(d.text),null,undoBtn(d.undoId));afterChange(d)}
+    catch(x){await fadeOut(t);say(pl.sc,esc(x.message||'Could not do it. Try again.'))}}
   if(u){const id=u.dataset.aundo;u.parentElement.remove();const sc=scope;
     try{const d=await api('/api/agent',{op:'undo',id});(hist[sc]||(hist[sc]=[])).push({role:'user',content:'Undo that.'},{role:'assistant',content:'Undone.'});say(sc,'Undone.');afterChange(d)}
     catch(x){say(sc,esc(x.status===409?'That was already undone.':'Could not undo. Try again.'))}}
