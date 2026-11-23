@@ -58,11 +58,17 @@ const ALLOWED_POST = [/\/gmail\/v1\/users\/me\/watch$/, /\/calendar\/v3\/calenda
 async function gapi(user, url, { method = 'GET', json } = {}) {
   if (method !== 'GET' && !ALLOWED_POST.some(r => r.test(url.split('?')[0]))) throw new Error('Blocked: JobImp only reads from Google.');
   const tok = await accessToken(user);
-  const r = await fetch(url, { method, headers: { Authorization: 'Bearer ' + tok, ...(json ? { 'Content-Type': 'application/json' } : {}) }, body: json ? JSON.stringify(json) : undefined });
-  if (r.status === 204) return {};
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) { const e = err(r.status, d.error?.message || 'Google request failed'); e.google = true; throw e; }
-  return d;
+  // Google limits reads per minute. When it says "too fast", wait a little and try again (up to 3 times).
+  for (let tryN = 0; ; tryN++) {
+    const r = await fetch(url, { method, headers: { Authorization: 'Bearer ' + tok, ...(json ? { 'Content-Type': 'application/json' } : {}) }, body: json ? JSON.stringify(json) : undefined });
+    if (r.status === 204) return {};
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) return d;
+    const tooFast = r.status === 429 || (r.status === 403 && /rate|quota/i.test(JSON.stringify(d.error || '')));
+    if (tooFast && tryN < 3) { await new Promise(ok => setTimeout(ok, [2000, 5000, 10000][tryN])); continue; }
+    const e = tooFast ? err(429, 'Google asked us to slow down. Continuing in a moment…') : err(r.status, d.error?.message || 'Google request failed');
+    e.google = true; throw e;
+  }
 }
 
 const GM = 'https://gmail.googleapis.com/gmail/v1/users/me';

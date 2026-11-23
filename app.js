@@ -405,7 +405,10 @@ function showChanges(list){
 // One time: find the email behind older log rows and timeline steps, so everything can be linked. Read only.
 let linking=false;
 async function linkOldMail(){if(linking||!GOOGLE.connected||store.get('jobimp-linked-v1'))return;linking=true;
-  try{for(let i=0;i<80;i++){const r=await api('/api/agent',{op:'linkold'});if(!r.left){store.set('jobimp-linked-v1','1');break}}await pull(true)}catch{}finally{linking=false}}
+  try{for(let i=0;i<120;i++){if(importing)break;
+      let r;try{r=await api('/api/agent',{op:'linkold'})}catch(x){if(x.status===429){await sleep(30e3);continue}throw x}
+      if(!r.left){store.set('jobimp-linked-v1','1');break}await sleep(1500)}
+    await pull(true)}catch{}finally{linking=false}}
 async function afterChange(d){if(!d.changed)return;await pull(true);setTimeout(()=>showChanges(d.changes),60)}
 const amode=()=>AMODE||(AMODE=store.get('jobimp-agent-mode')==='auto'?'auto':'plan');
 function undoBtn(id){return id?`<div class="acts"><button class="act" data-aundo="${id}">Undo</button></div>`:''}
@@ -643,12 +646,22 @@ function renderGoogle(){
 }
 async function runImport(){
   if(importing)return;importing=true;renderGoogle();
-  try{for(let k=0;k<200;k++){const r=await api('/api/jobs',{op:'sync'});if(r.waiting){importing=false;renderGoogle();return}await pull(true);if(r.done)break;
-      const el=$('#gsync');if(el)el.innerHTML=`<span class="gdot busy"></span>Reading… ${r.read||0} checked`}
-    toast('Done reading your Gmail and calendar');
-  }catch(x){toast(x.message||'Could not read Gmail right now.')}
-  importing=false;await pull(true);
+  const note=t=>{const el=$('#gsync');if(el)el.innerHTML=`<span class="gdot busy"></span>${esc(t)}`};
+  let fails=0,ok=false;
+  for(let k=0;k<400;k++){
+    try{const r=await api('/api/jobs',{op:'sync'});fails=0;if(r.waiting){importing=false;renderGoogle();return}await pull(true);if(r.done){ok=true;break}note(`Reading… ${r.read||0} checked`)}
+    catch(x){
+      // Google's per-minute limit: wait and keep going. Other errors: retry a few times, then stop.
+      if(x.status===429||/quota|rate limit/i.test(x.message||'')){note('Google asked us to slow down. Continuing in a moment…');await sleep(30e3);continue}
+      if(x.status===401){toast('Please sign in again.');break}
+      if(++fails<=((x.status||500)>=500?8:3)){note('Lost the connection. Trying again in a moment…');await sleep(10e3);continue}
+      toast('Could not finish reading Gmail. It will continue next time you open the app.');break}
+  }
+  if(ok)toast('Done reading your Gmail and calendar');
+  importing=false;await pull(true);renderGoogle();
+  if(ok)linkOldMail();
 }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function pull(force,fresh){
   if(!REAL||!$('#login').hidden)return;
   try{const d=await api('/api/jobs?'+new URLSearchParams(force?(fresh?{fresh:1}:{}):{v:VER,...(fresh?{fresh:1}:{})}));
