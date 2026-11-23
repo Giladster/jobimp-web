@@ -124,6 +124,8 @@ module.exports = A.handle(async (req, res) => {
   if (b.op === 'rebuild') {
     if (!user.refresh_enc) throw err(409, 'Connect Gmail first.');
     const n = await S.rebuild(user);
+    // Renew the Gmail ping so it covers Inbox + Sent from now on.
+    try { await S.startWatches(user, user.push_base || G.baseUrl(req)); } catch (e) { console.error('watch renew failed', e.message); }
     return res.status(200).json({ ok: true, backedUp: n });
   }
   if (b.op === 'restore') {
