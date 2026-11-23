@@ -47,6 +47,30 @@ module.exports = A.handle(async (req, res) => {
     if (!rowCount) throw err(404, 'Job not found.');
     return res.status(200).json({ ok: true, v: await version(user.id) });
   }
+  if (b.op === 'edit') {
+    const co = String(b.co || '').trim().slice(0, 80), role = String(b.role || '').trim().slice(0, 120);
+    if (!co) throw err(400, 'Company is needed.');
+    const { rowCount } = await q('update jobs set co=$3, role=$4, updated_at=now() where id=$1 and user_id=$2', [+b.id, user.id, co, role]);
+    if (!rowCount) throw err(404, 'Job not found.');
+    return res.status(200).json({ ok: true, v: await version(user.id) });
+  }
+  if (b.op === 'merge') {
+    // Join two jobs that are really one: timelines and dates go into "into", "from" is removed.
+    const { rows } = await q('select * from jobs where user_id=$1 and id = any($2::int[]) and not removed', [user.id, [+b.from, +b.into]]);
+    const from = rows.find(r => r.id === +b.from), into = rows.find(r => r.id === +b.into);
+    if (!from || !into || from.id === into.id) throw err(404, 'Job not found.');
+    const now = new Date(), seen = new Set(), tl = [];
+    for (const e of [...(into.tl || []), ...(from.tl || [])]) { const k = e[0] + '|' + String(e[1]).toLowerCase(); if (!seen.has(k)) { seen.add(k); tl.push(e); } }
+    tl.sort((a, c) => S.labelDate(c[0], now) - S.labelDate(a[0], now));
+    const RANK = { saved: 0, applied: 1, interview: 2, offer: 3 };
+    const open = [into, from].filter(j => j.status !== 'closed');
+    const status = open.length ? open.sort((a, c) => RANK[c.status] - RANK[a.status])[0].status : 'closed';
+    const min = (a, c) => (a && c ? (String(a) < String(c) ? a : c) : a || c || null);
+    await q(`update jobs set tl=$2, status=$3, applied=$4, first_reply=$5, next_raw=$6, role=$7, updated_at=now() where id=$1`,
+      [into.id, JSON.stringify(tl.slice(0, 60)), status, min(into.applied, from.applied), min(into.first_reply, from.first_reply), into.next_raw || from.next_raw, into.role && into.role !== 'Role not named' ? into.role : from.role]);
+    await q('update jobs set removed=true, updated_at=now() where id=$1', [from.id]);
+    return res.status(200).json({ ok: true, v: await version(user.id) });
+  }
   if (b.op === 'tz') {
     if (typeof b.tz === 'string' && b.tz.length < 60) { try { new Intl.DateTimeFormat('en', { timeZone: b.tz }); await q('update users set tz=$2 where id=$1', [user.id, b.tz]); } catch {} }
     return res.status(200).json({ ok: true });

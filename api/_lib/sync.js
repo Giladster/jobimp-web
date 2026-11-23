@@ -38,6 +38,11 @@ function labelDate(l, now) {
 /* ---------- matching ---------- */
 const norm = s => String(s || '').toLowerCase().replace(/\.(com|io|ai|co)\b/g, '').replace(/\b(ltd|inc|llc|group|technologies|israel)\b/g, '').replace(/[^a-z0-9֐-׿]+/g, '');
 function findJob(jobs, co, role) {
+  // Jobs you still have come first; a removed (or merged) job only matches when nothing else does.
+  const live = jobs.filter(j => !j.removed);
+  return pickJob(live, co, role) || pickJob(jobs.filter(j => j.removed), co, role);
+}
+function pickJob(jobs, co, role) {
   const n = norm(co); if (!n) return null;
   const same = jobs.filter(j => { const m = norm(j.co); return m === n || (m.length > 3 && n.length > 3 && (m.startsWith(n) || n.startsWith(m))); });
   if (same.length <= 1) return same[0] || null;
@@ -301,4 +306,4 @@ async function startWatches(user, base) {
   return out;
 }
 
-module.exports = { autoClose, importStep, catchUp, startWatches, processEvents, applyEvent, nextRaw, fromLocal, label };
+module.exports = { labelDate, autoClose, importStep, catchUp, startWatches, processEvents, applyEvent, nextRaw, fromLocal, label };
