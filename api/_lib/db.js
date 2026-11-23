@@ -68,7 +68,16 @@ create table if not exists ai_log (
   subject text,
   result jsonb
 );
-create index if not exists ai_log_user on ai_log (user_id, id desc);`;
+create index if not exists ai_log_user on ai_log (user_id, id desc);
+create table if not exists agent_undo (
+  id serial primary key,
+  user_id text not null references users(id) on delete cascade,
+  at timestamptz not null default now(),
+  label text not null,
+  before jsonb not null,
+  undone boolean not null default false
+);
+create index if not exists agent_undo_user on agent_undo (user_id, id desc);`;
 
 async function q(text, params) {
   const p = getPool();

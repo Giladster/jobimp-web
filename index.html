@@ -219,7 +219,10 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
 .sendb svg.i{width:16px;height:16px;stroke-width:2.2}
 .micb{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--faint);flex:none}
 .micb:hover{color:var(--ink)}
-.micb.rec{color:var(--s-closed)}
+.micb.rec{color:var(--s-closed);animation:micp 1.4s ease-in-out infinite}
+@keyframes micp{0%,100%{opacity:1}50%{opacity:.45}}
+.amode{font-size:12.6px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:3px 10px;flex:none;transition:color .2s,border-color .2s}
+.amode:hover{color:var(--ink);border-color:var(--muted)}
 .kbd{font-size:12.1px;color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:4px}
 
 /* modal */

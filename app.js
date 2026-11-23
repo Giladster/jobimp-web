@@ -317,10 +317,11 @@ function intro(sc){
    :REAL?`I read your Gmail and calendar to track your jobs. Read only: I never send, edit or delete anything.`:`I watch your search all day. Ask anything, or tell me what to do. I always ask before I send anything.`);
 }
 function setScope(sc){scope=sc;const box=$('#threadBox');box.innerHTML='';box.appendChild(thread(sc));thread(sc).scrollTop=1e5;$('#composer').dataset.scope=sc;renderABar();renderSugg()}
+function modePill(){return REAL?`<button class="amode" data-amode title="Change how the Agent acts">${amode()==='plan'?'Ask first':'Auto'}</button>`:''}
 function renderABar(){
   const j=jobOf(scope);
-  $('#abar').innerHTML=j?`${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)} agent</div><div class="t2">${esc(j.role)} · ${stl(j.status)}</div></div><button class="home" data-scope-main>Main agent</button><button class="done closeA" data-closeA>Close</button>`
-    :`<div class="av spark">${I(SPARK)}</div><div class="txt"><div class="t1">Agent</div><div class="t2">Knows all your jobs <span class="kbd">/</span></div></div><button class="done closeA" data-closeA>Close</button>`;
+  $('#abar').innerHTML=j?`${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)} agent</div><div class="t2">${esc(j.role)} · ${stl(j.status)}</div></div>${modePill()}<button class="home" data-scope-main>Main agent</button><button class="done closeA" data-closeA>Close</button>`
+    :`<div class="av spark">${I(SPARK)}</div><div class="txt"><div class="t1">Agent</div><div class="t2">Knows all your jobs <span class="kbd">/</span></div></div>${modePill()}<button class="done closeA" data-closeA>Close</button>`;
 }
 document.addEventListener('click',e=>{
   if(e.target.closest('[data-scope-main]'))setScope('main');
@@ -331,14 +332,31 @@ $('#atoggle').onclick=()=>openAgentMobile(true);
 
 function findCo(t){const all=[...new Set([...jobs.map(j=>j.co),...alerts.map(a=>a.co)])];return all.find(c=>t.includes(c.toLowerCase().split(/[ .]/)[0]))}
 function statusIn(t){if(/reject|closed|delete/.test(t))return'closed';if(/reopen/.test(t))return'saved';if(/accept|offer/.test(t))return'offer';if(/interview/.test(t)&&/(move|mark|to )/.test(t))return'interview';if(/applied/.test(t)&&/(mark|move|i applied|to applied)/.test(t))return'applied';return null}
-const hist={};
+const hist={},plans={};let planN=0,AMODE=null;
 const agentFmt=t=>esc(t).replace(/\n/g,'<br>');
+const amode=()=>AMODE||(AMODE=store.get('jobimp-agent-mode')==='auto'?'auto':'plan');
+function undoBtn(id){return id?`<div class="acts"><button class="act" data-aundo="${id}">Undo</button></div>`:''}
 async function askAgent(raw,sc){
   const h=hist[sc]||(hist[sc]=[]);h.push({role:'user',content:raw});
   const t=bubble(sc,'bot typing','<i></i><i></i><i></i>');const j=jobOf(sc);
-  try{const d=await api('/api/agent',{messages:h.slice(-20),jobId:j?j.id:null});t.remove();h.push({role:'assistant',content:d.text});say(sc,agentFmt(d.text));if(d.changed&&d.changed.length)pull(true)}
+  try{const d=await api('/api/agent',{messages:h.slice(-20),jobId:j?j.id:null,mode:amode()});t.remove();h.push({role:'assistant',content:d.text});
+    if(d.plan){const k=++planN;plans[k]={calls:d.plan,sc};say(sc,agentFmt(d.text),null,`<div class="acts"><button class="act pri" data-aplan="${k}">Do it</button><button class="act" data-acancel="${k}">Cancel</button></div>`)}
+    else say(sc,agentFmt(d.text),null,undoBtn(d.undoId));
+    if(d.changed)pull(true)}
   catch(e){t.remove();h.pop();say(sc,esc(e.status===503?'The AI key is not set yet, so I can’t answer.':'Sorry, I couldn’t answer just now. Try again.'))}
 }
+document.addEventListener('click',async e=>{
+  const p=e.target.closest('[data-aplan],[data-acancel]'),u=e.target.closest('[data-aundo]');
+  if(p){const k=p.dataset.aplan||p.dataset.acancel,pl=plans[k];if(!pl)return;delete plans[k];p.parentElement.remove();const h=hist[pl.sc]||(hist[pl.sc]=[]);
+    if(p.dataset.acancel){h.push({role:'user',content:'Cancel that plan.'},{role:'assistant',content:'OK, I changed nothing.'});say(pl.sc,'OK, I changed nothing.');return}
+    const t=bubble(pl.sc,'bot typing','<i></i><i></i><i></i>');
+    try{const d=await api('/api/agent',{op:'apply',calls:pl.calls});t.remove();h.push({role:'user',content:'Do it.'},{role:'assistant',content:d.text});say(pl.sc,agentFmt(d.text),null,undoBtn(d.undoId));if(d.changed)pull(true)}
+    catch(x){t.remove();say(pl.sc,esc(x.message||'Could not do it. Try again.'))}}
+  if(u){const id=u.dataset.aundo;u.parentElement.remove();const sc=scope;
+    try{await api('/api/agent',{op:'undo',id});(hist[sc]||(hist[sc]=[])).push({role:'user',content:'Undo that.'},{role:'assistant',content:'Undone.'});say(sc,'Undone.');pull(true)}
+    catch(x){say(sc,esc(x.status===409?'That was already undone.':'Could not undo. Try again.'))}}
+  const m=e.target.closest('[data-amode]');if(m){AMODE=amode()==='plan'?'auto':'plan';store.set('jobimp-agent-mode',AMODE);renderABar();toast(AMODE==='plan'?'Ask first: I’ll show my plan before I change anything':'Auto: I’ll just do what you ask')}
+});
 function handle(raw,sc){
   const t=raw.toLowerCase().trim();if(!t)return;
   if(sc!==scope)setScope(sc);
@@ -386,8 +404,18 @@ document.addEventListener('click',e=>{
   handle(c,b.closest('#page')&&view!=='job'?'main':scope);
 });
 $('#composer').onsubmit=e=>{e.preventDefault();const v=$('#inp').value;$('#inp').value='';handle(v,scope)};
-$('#mic').onclick=e=>{const m=e.currentTarget;if(m.classList.contains('rec'))return;m.classList.add('rec');$('#inp').placeholder='Listening…';
-  setTimeout(()=>{m.classList.remove('rec');$('#inp').placeholder='Ask or tell me anything';handle('Add Similarweb',scope)},1400)};
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null;
+$('#mic').onclick=e=>{const m=e.currentTarget;
+  if(!SR){if(REAL){toast('Voice needs Chrome, Edge or Safari.');return}
+    if(m.classList.contains('rec'))return;m.classList.add('rec');$('#inp').placeholder='Listening…';
+    setTimeout(()=>{m.classList.remove('rec');$('#inp').placeholder='Ask or tell me anything';handle('Add Similarweb',scope)},1400);return}
+  if(rec){rec.stop();return}
+  rec=new SR();rec.lang=store.get('jobimp-voice-lang')||navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
+  const base=$('#inp').value;let fin='';
+  rec.onresult=ev=>{let f='',tmp='';for(const r of ev.results){if(r.isFinal)f+=r[0].transcript;else tmp+=r[0].transcript}fin=f;$('#inp').value=(base?base+' ':'')+(f+tmp)};
+  rec.onerror=ev=>{if(ev.error==='not-allowed')toast('Allow the microphone to talk to the Agent.');else if(ev.error!=='no-speech'&&ev.error!=='aborted')toast('Could not hear you. Try again.')};
+  rec.onend=()=>{m.classList.remove('rec');$('#inp').placeholder='Ask or tell me anything';rec=null;const v=$('#inp').value.trim();if(fin&&v){$('#inp').value='';handle(v,scope)}};
+  m.classList.add('rec');$('#inp').placeholder='Listening… tap the mic to stop';if(matchMedia('(max-width:1240px)').matches)openAgentMobile(true);rec.start()};
 
 
 /* accounts: demo (sample data) or Gilad (real data from Gmail + calendar, read only) */
