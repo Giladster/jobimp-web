@@ -332,11 +332,20 @@ $('#atoggle').onclick=()=>openAgentMobile(true);
 
 function findCo(t){const all=[...new Set([...jobs.map(j=>j.co),...alerts.map(a=>a.co)])];return all.find(c=>t.includes(c.toLowerCase().split(/[ .]/)[0]))}
 function statusIn(t){if(/reject|closed|delete/.test(t))return'closed';if(/reopen/.test(t))return'saved';if(/accept|offer/.test(t))return'offer';if(/interview/.test(t)&&/(move|mark|to )/.test(t))return'interview';if(/applied/.test(t)&&/(mark|move|i applied|to applied)/.test(t))return'applied';return null}
+const hist={};
+const agentFmt=t=>esc(t).replace(/\n/g,'<br>');
+async function askAgent(raw,sc){
+  const h=hist[sc]||(hist[sc]=[]);h.push({role:'user',content:raw});
+  const t=bubble(sc,'bot typing','<i></i><i></i><i></i>');const j=jobOf(sc);
+  try{const d=await api('/api/agent',{messages:h.slice(-20),jobId:j?j.id:null});t.remove();h.push({role:'assistant',content:d.text});say(sc,agentFmt(d.text));if(d.changed&&d.changed.length)pull(true)}
+  catch(e){t.remove();h.pop();say(sc,esc(e.status===503?'The AI key is not set yet, so I can’t answer.':'Sorry, I couldn’t answer just now. Try again.'))}
+}
 function handle(raw,sc){
   const t=raw.toLowerCase().trim();if(!t)return;
   if(sc!==scope)setScope(sc);
   if(matchMedia('(max-width:1240px)').matches)openAgentMobile(true);
   bubble(sc,'me',esc(raw));
+  if(REAL){askAgent(raw,sc);return}
   const ctxJob=jobOf(sc);const co=findCo(t)||ctxJob?.co;const job=co&&jobBy(co);const st=statusIn(t);
   if(st&&/(mark|move|i applied|reopen|delete|rejected)/.test(t)&&job){setStatus(job,st);
     reply(sc,`Done. ${esc(job.co)} is now ${SL[st]}.${st==='closed'?' I’ll note what we learned.':st==='applied'?' I’ll nudge you in 7 days.':''}`,sc[0]==='j'?null:[['Open','go:open:'+job.id]]);setTimeout(renderABar,650);return}
