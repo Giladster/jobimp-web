@@ -1,7 +1,7 @@
 // Turns new emails and calendar events into job updates.
 const crypto = require('crypto');
 const { q } = require('./db');
-const { gapi, getMessage, GM, CAL } = require('./google');
+const { gapi, getMessage, getMeta, GM, CAL } = require('./google');
 const { classify, hasKey } = require('./ai');
 const { signValue } = require('./auth');
 
@@ -169,6 +169,8 @@ async function classifyAndApply(user, items) {
       JSON.stringify({ did, company: r.company || '', role: r.role || '', kind: r.kind || 'none', note: r.note || '', why: r.why || '', id: r.extId || '' })]);
   }
   await writeLog(user, logs);
+  const th = [...new Set(results.filter(r => r.threadId && r.job_related && r.company).map(r => r.threadId))];
+  if (th.length) await q('insert into job_threads (user_id, thread_id) select $1, unnest($2::text[]) on conflict do nothing', [user.id, th]);
   return n;
 }
 async function writeLog(user, rows) {
@@ -178,20 +180,34 @@ async function writeLog(user, rows) {
     [user.id, ...cols.map((_, k) => rows.map(r => r[k]))]);
 }
 
-async function processMessages(user, ids) {
+// Conversations already marked as a job. Lists made before this existed: learn them once from the emails in the timelines.
+async function jobThreads(user, jobs) {
+  const have = (await q('select thread_id from job_threads where user_id=$1', [user.id])).rows.map(r => r.thread_id);
+  if (have.length) return new Set(have);
+  const ids = [...new Set(jobs.flatMap(j => (j.tl || []).map(t => t[2]).filter(m => m && m.s === 'gmail' && m.id).map(m => m.id)))].slice(0, 150);
+  const th = [...new Set((await pool(ids, 5, id => getMeta(user, id).catch(() => null))).filter(Boolean).map(m => m.threadId))];
+  if (th.length) await q('insert into job_threads (user_id, thread_id) select $1, unnest($2::text[]) on conflict do nothing', [user.id, th]);
+  return new Set(th);
+}
+
+// Privacy: first read only the envelope (sender, To, subject). Open the full email only when it is about a job.
+// Sent emails: only replies in a conversation already marked as a job, or emails to a company in My jobs.
+// matched = ids Gmail itself found with the job search (SEARCH), so they already look job related.
+async function processMessages(user, ids, matched) {
   const mine = await claim(user, 'gmail', [...new Set(ids)]);
   if (!mine.length) return 0;
   try {
-    const msgs = (await pool(mine, 5, id => getMessage(user, id).catch(e => (e.status === 404 ? null : Promise.reject(e))))).filter(Boolean);
-    // Emails you sent count when they look job related or go to a company in My jobs.
-    const known = (await loadJobs(user)).filter(j => !j.removed).map(j => norm(j.co)).filter(n => n.length > 2);
-    const toKnown = m => { const t = norm((m.to + ' ' + m.cc).replace(/@/g, ' ')); return known.some(n => t.includes(n)); };
+    const heads = (await pool(mine, 5, id => getMeta(user, id).catch(e => (e.status === 404 ? null : Promise.reject(e))))).filter(Boolean);
+    const jobs = await loadJobs(user), known = jobs.filter(j => !j.removed).map(j => norm(j.co)).filter(n => n.length > 2);
+    const threads = await jobThreads(user, jobs);
+    const hits = s => { const t = norm(String(s).replace(/@/g, ' ')); return known.some(n => t.includes(n)); };
     const isSent = m => m.labels.includes('SENT');
-    const items = msgs.filter(m => !m.labels.some(l => SKIP_LABELS.includes(l)) && (isSent(m)
-        ? JOBBY.test(m.subject + ' ' + m.text.slice(0, 3000)) || toKnown(m)
-        : !SKIP_FROM.test(m.from) && JOBBY.test(m.subject + ' ' + m.snippet + ' ' + m.text.slice(0, 3000))))
-      .map(m => ({ type: 'email', src: 'gmail', sent: isSent(m), extId: m.id, date: m.at, from: m.from, to: m.to, subject: m.subject, text: m.text,
-        files: m.files.map(f => f.name).join(', '), nfiles: m.files.length }));
+    const keep = heads.filter(m => !m.labels.some(l => SKIP_LABELS.includes(l)) && (isSent(m)
+      ? threads.has(m.threadId) || hits(m.to + ' ' + m.cc)
+      : !SKIP_FROM.test(m.from) && (matched?.has(m.id) || threads.has(m.threadId) || hits(m.from) || JOBBY.test(m.subject))));
+    const msgs = (await pool(keep, 5, m => getMessage(user, m.id).catch(e => (e.status === 404 ? null : Promise.reject(e))))).filter(Boolean);
+    const items = msgs.map(m => ({ type: 'email', src: 'gmail', sent: isSent(m), extId: m.id, threadId: m.threadId, date: m.at, from: m.from, to: m.to, subject: m.subject, text: m.text,
+      files: m.files.map(f => f.name).join(', '), nfiles: m.files.length }));
     return await classifyAndApply(user, items);
   } catch (e) { await unclaim(user, 'gmail', mine); throw e; }
 }
@@ -243,7 +259,7 @@ async function importStep(user) {
     const p = new URLSearchParams({ q: `after:${after} ${SEARCH}`, maxResults: '20' }); if (st.page) p.set('pageToken', st.page);
     const list = await gapi(user, `${GM}/messages?${p}`);
     const ids = (list.messages || []).map(m => m.id);
-    st.jobs += await processMessages(user, ids); st.n += ids.length;
+    st.jobs += await processMessages(user, ids, new Set(ids)); st.n += ids.length;
     st.page = list.nextPageToken || null; if (!st.page) st.phase = 'sent';
   } else if (st.phase === 'sent') {
     const after = Math.floor(from.getTime() / 1000);
@@ -288,7 +304,14 @@ async function catchUp(user, historyHint) {
       }
       latest = String(historyHint || (await gapi(user, `${GM}/profile`)).historyId);
     }
-    n += await processMessages(user, ids);
+    // Ask Gmail which of the new emails match the job search, so those count as job related.
+    const matched = new Set();
+    if (ids.length) {
+      const since = Math.floor((user.last_sync ? new Date(user.last_sync).getTime() - 864e5 : Date.now() - 7 * 864e5) / 1000);
+      const list = await gapi(user, `${GM}/messages?${new URLSearchParams({ q: `after:${since} ${SEARCH}`, maxResults: '100' })}`);
+      (list.messages || []).forEach(m => matched.add(m.id));
+    }
+    n += await processMessages(user, ids, matched);
     await q(`update users set gmail_history=$2 where id=$1 and (gmail_history is null or gmail_history::numeric < $2::numeric)`, [user.id, latest]);
   }
   const since = user.cal_checked ? new Date(new Date(user.cal_checked).getTime() - 2 * 60e3) : new Date(Date.now() - 864e5);
@@ -333,6 +356,7 @@ async function rebuild(user, days = 180) {
   await q('delete from jobs where user_id=$1', [user.id]);
   await q('delete from seen where user_id=$1', [user.id]);
   await q('delete from ai_log where user_id=$1', [user.id]);
+  await q('delete from job_threads where user_id=$1', [user.id]);
   const from = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
   await q(`update users set synced_from=$2, import_state='{"phase":"gmail","n":0,"jobs":0}'::jsonb where id=$1`, [user.id, from]);
   return rows.length;

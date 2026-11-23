@@ -86,6 +86,11 @@ create table if not exists jobs_backup (
   user_id text not null references users(id) on delete cascade,
   at timestamptz not null default now(),
   data jsonb not null
+);
+create table if not exists job_threads (
+  user_id text not null references users(id) on delete cascade,
+  thread_id text not null,
+  primary key (user_id, thread_id)
 );`;
 
 async function q(text, params) {
