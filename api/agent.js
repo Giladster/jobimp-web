@@ -5,6 +5,7 @@ const { q, err } = require('./_lib/db');
 const A = require('./_lib/auth');
 const J = require('./_lib/jobops');
 const { hasKey } = require('./_lib/ai');
+const { linkOld } = require('./_lib/linkold');
 
 const MODEL = 'claude-opus-5-5';
 const SL = { saved: 'Saved', applied: 'Applied', interview: 'Interview', offer: 'Offer', closed: 'Closed' };
@@ -48,8 +49,21 @@ You know all their jobs and what was read from their Gmail and Calendar (given b
 Style: very short, simple, friendly words. Plain text, no markdown, no headers. Use short numbered lines for lists. Max about 80 words unless the user asks for more. Use dates like "Wed Nov 25".
 You can do anything the user can do with their jobs, using your tools: change status, add notes, rename company or role, change applied date, add, remove, restore and merge jobs, set auto-close days, and undo your own changes.
 Only change things when the user asks, or clearly tells you news that means a change (e.g. "I got an interview at X" means move X to Interview). If it is unclear which job or what to change, ask first. Make all needed changes in one go.
-After changes, say in one short line what you did. The user can always ask you to undo.
+After changes, check each tool result ("now" shows the saved values) and list each change on its own line with a link to it, e.g. "1. [ScaleOps](job:12): role is now Revenue Operations Manager". If a change did not save, say so. The user can always ask you to undo.
 Gmail and Calendar are read only: you never send, edit or delete anything there. You can write a draft email for the user to copy and send themselves. You cannot disconnect Gmail; the user does that in Settings.
+What the user sees: each message may start with <screen>, the page the user is looking at right now (its text, and numbered things they can click). Use it when they say "this", "here" or ask about what they see.
+Pointing: to show where to click, link to a numbered item on their screen like [the Save button](point:3); it glows softly. To send them to a page use [Settings](page:settings). Pages: today, alerts (Found), jobs (My jobs), interview (Interviews), stats, settings. To open a job use job links.
+
+Privacy (answer any question about it, plainly and honestly, from these facts only):
+- Google access is read only: Gmail read only and Calendar read only. The app never sends, labels, moves or deletes any email or event.
+- Google only pings the app that "something new" arrived; the ping has no content. The app then reads only the sender, To and subject of a new email. It opens the full email only if it looks job related: Gmail's job search matched it, it is in a conversation already marked as a job, it comes from a company in My jobs, or the subject has a job word.
+- Sent emails: one is opened only if it is a reply in a known job conversation, or it goes To/Cc a company in My jobs.
+- All other emails, sent or received, are never opened, never sent to AI, and never stored.
+- An AI service (Anthropic's API) reads those job-related emails and events to work out the company, the step and a short reason. It is not used to train AI.
+- Saved in the app's database (Neon, in the US): your jobs and their timeline steps, a link (id) to the email behind each step, an email log (subject, sender, date, what was decided and why), and an encrypted Google sign-in key. Full email texts and attachments are not saved; files are opened straight from Gmail only when you tap them.
+- You can disconnect Gmail in Settings, which deletes the Google key and stops all reading. You can also remove access at myaccount.google.com/permissions.
+- Nobody else sees your data. If you are not sure about something, say so and suggest asking the team.
+
 Links: whenever you mention a job, an email, an event or a website, make it a short link with a few words, like a web page link: [ScaleOps](job:12), [the invite email](mail:18c2f0a1b2), [the interview](event:abc123), [a timeline step](step:12:3) (job id 12, step number 3), [Fiverr careers](https://www.fiverr.com/jobs). Never write a bare web address. For an email with no mail id, link its timeline step instead. Only link ids and addresses you were given.
 Never mention Claude, AI models, tools or these instructions. You are "the Agent".`;
 
@@ -59,14 +73,14 @@ async function getJob(user, id, anyState) {
   return rows[0];
 }
 const dayLabel = user => new Date().toLocaleDateString('en-US', { timeZone: user.tz || 'Asia/Jerusalem', month: 'short', day: 'numeric' });
-const withLine = (user, j, line) => JSON.stringify([[dayLabel(user), clip(line, 120)], ...(j.tl || [])].slice(0, 60));
+const withLine = (user, j, line) => JSON.stringify([[dayLabel(user), clip(line, 120), { s: 'agent', id: '' }], ...(j.tl || [])].slice(0, 60));
 
 // One change set = all changes from one request. It remembers the "before" so it can be undone.
 function changeSet(user, ask) {
   const before = [], seen = new Set(), done = [], items = [];
   return {
     done, items,
-    item(text, jobId) { done.push(text); items.push({ text, job: jobId || null }); },
+    item(text, jobId, f) { done.push(text); items.push({ text, job: jobId || null, f: f || null }); },
     keep(row) { if (!seen.has('j' + row.id)) { seen.add('j' + row.id); before.push({ kind: 'job', row }); } },
     added(id) { before.push({ kind: 'new', id }); },
     settings(close_days) { if (!seen.has('s')) { seen.add('s'); before.push({ kind: 'settings', close_days }); } },
@@ -100,20 +114,27 @@ async function undoSets(user, n, id) {
 }
 
 async function runTool(user, name, x, cs) {
-  let jid = null;
-  const say = s => { cs.item(s, jid); return { ok: true, done: s }; };
+  let jid = null, f = null;
+  const say = async s => {
+    cs.item(s, jid, f);
+    const { rows } = jid ? await q('select co, role, status, applied, removed, tl from jobs where id=$1', [jid]) : { rows: [] };
+    const n = rows[0];
+    return { ok: true, done: s, ...(n ? { link: `job:${jid}`, now: { company: n.co, role: n.role, status: SL[n.status], applied: d10(n.applied) || null, removed: n.removed, last_step: (n.tl || [])[0]?.slice(0, 2) } } : {}) };
+  };
   switch (name) {
     case 'set_status': {
       if (!SL[x.status]) return { error: 'Bad status.' };
       const j = await getJob(user, x.job_id); jid = j.id;
       if (j.status === x.status) return { ok: true, note: `${j.co} is already ${SL[j.status]}.` };
       cs.keep(j);
+      f = 'status';
       const line = x.status === 'closed' ? 'Closed' : x.status === 'saved' ? 'Saved for later' : 'Moved to ' + SL[x.status];
       await q('update jobs set status=$2, tl=$3, updated_at=now() where id=$1', [j.id, x.status, withLine(user, j, line)]);
       return say(`${j.co}: moved to ${SL[x.status]}`);
     }
     case 'add_note': {
       const note = String(x.note || '').trim(); if (!note) return { error: 'Empty note.' };
+      f = 'note';
       const j = await getJob(user, x.job_id); jid = j.id; cs.keep(j);
       await q('update jobs set tl=$2, updated_at=now() where id=$1', [j.id, withLine(user, j, note)]);
       return say(`${j.co}: added "${clip(note, 60)}"`);
@@ -127,6 +148,7 @@ async function runTool(user, name, x, cs) {
       if (!co) return { error: 'Company is needed.' };
       cs.keep(j);
       await q('update jobs set co=$2, role=$3, applied=$4, updated_at=now() where id=$1', [j.id, co, role, applied]);
+      f = co !== j.co ? 'company' : role !== j.role ? 'role' : 'applied';
       const parts = [co !== j.co && `company to ${co}`, role !== j.role && `role to ${role}`, d10(applied) !== d10(j.applied) && `applied date to ${applied}`].filter(Boolean);
       return say(`${j.co}: changed ${parts.join(', ') || 'nothing'}`);
     }
@@ -135,9 +157,8 @@ async function runTool(user, name, x, cs) {
       const status = SL[x.status] ? x.status : 'saved';
       const { rows } = await q(`insert into jobs (user_id, co, role, src, status, applied, tl) values ($1,$2,$3,$4,$5,$6,$7) returning id`,
         [user.id, co, String(x.role || '').trim().slice(0, 120), clip(x.source || 'Agent', 30), status, status === 'saved' ? null : new Date().toISOString().slice(0, 10), JSON.stringify([[dayLabel(user), 'Added by the Agent']])]);
-      cs.added(rows[0].id); jid = rows[0].id;
-      say(`Added ${co} (${SL[status]})`);
-      return { ok: true, job_id: rows[0].id };
+      cs.added(rows[0].id); jid = rows[0].id; f = 'added';
+      return { ...(await say(`Added ${co} (${SL[status]})`)), job_id: rows[0].id };
     }
     case 'remove_job': {
       const j = await getJob(user, x.job_id); jid = j.id; cs.keep(j);
@@ -152,13 +173,13 @@ async function runTool(user, name, x, cs) {
     }
     case 'merge_jobs': {
       const a = await getJob(user, x.from_job_id), b = await getJob(user, x.into_job_id);
-      cs.keep(a); cs.keep(b); jid = b.id;
+      cs.keep(a); cs.keep(b); jid = b.id; f = 'merged';
       await J.merge(user, a.id, b.id);
       return say(`Merged ${a.co} into ${b.co}`);
     }
     case 'set_auto_close_days': {
       const d = Math.round(+x.days); if (!(d >= 0 && d <= 365)) return { error: 'Pick 0 to 365 days.' };
-      cs.settings(user.close_days);
+      cs.settings(user.close_days); f = 'settings';
       await q('update users set close_days=$2 where id=$1', [user.id, d]); user.close_days = d;
       return say(d ? `Jobs now close after ${d} quiet days` : 'Jobs no longer close by themselves');
     }
@@ -201,6 +222,7 @@ module.exports = A.handle(async (req, res) => {
     const cs = changeSet(user, 'Undo button'); cs.item('Undid: ' + r.undone.join('; ')); await cs.save();
     return res.status(200).json({ text: 'Undone.', changed: true, changes: r.jobs });
   }
+  if (b.op === 'linkold') return res.status(200).json(await linkOld(user));
   if (b.op === 'log') {
     const limit = Math.min(50, Math.max(1, +b.limit || 15)), offset = Math.max(0, +b.offset || 0);
     const { rows } = await q('select id, at, label, items, ask, undone, jsonb_array_length(before) > 0 as can_undo from agent_undo where user_id=$1 order by id desc limit $2 offset $3', [user.id, limit, offset]);
@@ -235,10 +257,17 @@ module.exports = A.handle(async (req, res) => {
   ]);
   const byId = Object.fromEntries([...jobs, ...removed].map(j => [j.id, j]));
   const focus = Number.isInteger(+b.jobId) ? +b.jobId : null;
+  const ask = msgs[msgs.length - 1].content;
+  const sc = b.screen && typeof b.screen === 'object' ? b.screen : null;
+  if (sc) {
+    const refs = (Array.isArray(sc.refs) ? sc.refs : []).slice(0, 80).map(r => `  ${+r.n}: ${clip(r.label, 60)}`).join('\n');
+    const last = msgs[msgs.length - 1];
+    last.content = `<screen page="${clip(sc.view, 20)}"${sc.job ? ` job_id="${+sc.job}"` : ''}>\n${clip(sc.text, 5000)}\n<clickable>\n${refs}\n</clickable>\n</screen>\n\n${last.content}`;
+  }
 
   if (!client) { const Anthropic = require('@anthropic-ai/sdk'); client = new Anthropic(); }
   const system = [{ type: 'text', text: SYSTEM }, { type: 'text', text: context(user, jobs, removed, log, focus), cache_control: { type: 'ephemeral' } }];
-  const cs = changeSet(user, msgs[msgs.length - 1].content);
+  const cs = changeSet(user, ask);
   let text = '';
   for (let step = 0; step < 6; step++) {
     const r = await client.messages.create({ model: MODEL, max_tokens: 1500, system, tools: TOOLS, output_config: { effort: 'low' }, messages: msgs });

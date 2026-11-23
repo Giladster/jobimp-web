@@ -334,13 +334,16 @@ $('#atoggle').onclick=()=>openAgentMobile(true);
 function findCo(t){const all=[...new Set([...jobs.map(j=>j.co),...alerts.map(a=>a.co)])];return all.find(c=>t.includes(c.toLowerCase().split(/[ .]/)[0]))}
 function statusIn(t){if(/reject|closed|delete/.test(t))return'closed';if(/reopen/.test(t))return'saved';if(/accept|offer/.test(t))return'offer';if(/interview/.test(t)&&/(move|mark|to )/.test(t))return'interview';if(/applied/.test(t)&&/(mark|move|i applied|to applied)/.test(t))return'applied';return null}
 const hist={},plans={};let planN=0,AMODE=null;
-const agentFmt=t=>esc(t).replace(/\[([^\]\n]{1,90})\]\(((?:job|step|mail|event):[\w:.\-]+|https?:\/\/[^\s)]+)\)/g,(m,txt,u)=>/^https?:/.test(u)
+const agentFmt=t=>esc(t).replace(/\[([^\]\n]{1,90})\]\(((?:job|step|mail|event|page|point):[\w:.\-]+|https?:\/\/[^\s)]+)\)/g,(m,txt,u)=>/^https?:/.test(u)
     ?`<a class="alink" href="${u.replace(/&amp;/g,'&').replace(/"/g,'%22')}" target="_blank" rel="noopener">${txt}</a>`
     :`<a class="alink" href="#" data-alink="${u}">${txt}</a>`).replace(/\n/g,'<br>');
 // Agent links: open the job, a step's email, an email or an event. The chat stays as it is.
 async function openALink(u){
   const [k,a,b]=u.split(':');
-  if(k==='job'){const j=jobs.find(x=>x.id===+a);if(!j){toast('That job is not in My jobs.');return}curJob=j;show('job',true);if(matchMedia('(max-width:1240px)').matches)openAgentMobile(false);return}
+  const narrow=matchMedia('(max-width:1240px)').matches;
+  if(k==='job'){const j=jobs.find(x=>x.id===+a);if(!j){toast('That job is not in My jobs.');return}curJob=j;show('job',true);if(narrow)openAgentMobile(false);setTimeout(()=>flashRecent(j.id),80);return}
+  if(k==='page'){const v={found:'alerts',myjobs:'jobs',interviews:'interview'}[a]||a;if(!['today','alerts','jobs','interview','stats','settings'].includes(v))return;show(v,true);if(narrow)openAgentMobile(false);setTimeout(()=>flashRecent(v),80);return}
+  if(k==='point'){const el=document.querySelector(`[data-aref="${+a}"]`);if(!el){toast('That is no longer on the screen.');return}if(narrow)openAgentMobile(false);glow(el);return}
   if(k==='step'){const j=jobs.find(x=>x.id===+a),t0=j&&(j.tl0||j.tl)[+b];if(!t0){toast('Could not find that step.');return}openStep(j,null,t0);return}
   openModal(k==='event'?'Calendar event':'Email','<div class="t2 logpad">Opening…</div>');
   try{if(k==='event'){const {event:e}=await api('/api/jobs?event='+encodeURIComponent(a));$('#mBody').innerHTML=eventHtml(e)}
@@ -348,30 +351,70 @@ async function openALink(u){
   catch(x){$('#mBody').innerHTML=`<div class="t2 logpad">${esc(x.message||'Could not open it.')}</div>`}
 }
 /* Show the Agent's changes: a soft blink if you can see them, else a small pop-up at the bottom left. */
+function flash(el){if(!el)return;el.classList.remove('aflash');void el.offsetWidth;el.classList.add('aflash');setTimeout(()=>el.classList.remove('aflash'),3000)}
+function glow(el){el.scrollIntoView({block:'center',behavior:'smooth'});el.classList.remove('aglow');void el.offsetWidth;el.classList.add('aglow');setTimeout(()=>el.classList.remove('aglow'),4200)}
+const RECENT=new Map(); // job id or page -> changed fields, kept 10 minutes so "View" can blink them
+// Where a change shows on the current screen (empty if not on screen).
+function changeEls(c){
+  const out=[];
+  if(c.f==='settings'){if(view==='settings'){const r=$('#page .setrow');if(r)out.push(r)}return out}
+  if(!c.job)return out;
+  document.querySelectorAll(`#page [data-open="${c.job}"]`).forEach(e=>out.push(e));
+  if(view==='job'&&curJob?.id===c.job){
+    out.push($('#page .dh'));
+    const tl=$('#page .tlh')?.parentElement;
+    ({role:[$('#page .dh h2')],company:[$('#page .dh .t2')],applied:[$('#page .dh .t2')],status:[$('#page .tabsline button.on'),tl],note:[tl],added:[tl],merged:[tl]})[c.f]?.forEach(e=>out.push(e));
+  }
+  return out.filter(Boolean);
+}
+function flashRecent(key){
+  const list=RECENT.get(key);if(!list)return;RECENT.delete(key);
+  list.filter(c=>Date.now()-c.t<6e5).forEach(c=>changeEls(c).forEach(flash));
+}
+// What the user sees now, sent with each question. Clickable things get a number the Agent can point to.
+function screenCtx(){
+  document.querySelectorAll('[data-aref]').forEach(e=>e.removeAttribute('data-aref'));
+  const modal=$('#modal').classList.contains('on');
+  const roots=modal?[$('#modal')]:[$('#page'),$('#nav'),$('#sjobs')];
+  const refs=[];let n=0;
+  roots.filter(Boolean).forEach(r=>r.querySelectorAll('button,a,input,select,[data-open],[data-step]').forEach(el=>{
+    if(n>=80||!el.offsetParent||el.closest('[data-aref]'))return;
+    const label=(el.getAttribute('aria-label')||el.innerText||el.placeholder||el.title||'').replace(/\s+/g,' ').trim();if(!label)return;
+    el.dataset.aref=++n;refs.push({n,label:el.tagName==='INPUT'?'Box: '+label:label});
+  }));
+  const text=(modal?$('#modal').innerText:$('#page').innerText).replace(/\n{3,}/g,'\n\n').slice(0,5000);
+  return {view:modal?'popup':view,job:view==='job'&&curJob?curJob.id:null,text,refs};
+}
 const popOn=()=>store.get('jobimp-agent-pop')!=='off';
 function showChanges(list){
   list=(list||[]).filter(c=>c&&c.text);if(!list.length)return;
   const unseen=[];
   for(const c of list){
-    const els=c.job?[...document.querySelectorAll(`#page [data-open="${c.job}"]`)]:[];
-    if(c.job&&view==='job'&&curJob?.id===c.job){const h=$('#page .dh')||$('#page');if(h)els.push(h)}
-    if(els.length)els.forEach(el=>{el.classList.remove('aflash');void el.offsetWidth;el.classList.add('aflash')});else unseen.push(c);
+    const els=changeEls(c);
+    if(els.length)els.forEach(flash);
+    else{unseen.push(c);const key=c.f==='settings'?'settings':c.job;if(key){const l=RECENT.get(key)||[];l.push({...c,t:Date.now()});RECENT.set(key,l)}}
   }
   if(!unseen.length||!popOn())return;
-  const box=$('#apop');box.innerHTML=`<div class="t3">Agent</div>`+unseen.slice(0,4).map(c=>`<div class="apr"><span>${esc(c.text)}</span>${c.job&&jobs.some(j=>j.id===c.job)?`<a href="#" class="alink" data-alink="job:${c.job}">View</a>`:''}</div>`).join('');
+  const link=c=>c.f==='settings'?'page:settings':c.job&&jobs.some(j=>j.id===c.job)?'job:'+c.job:'';
+  const box=$('#apop');box.innerHTML=`<div class="t3">Agent</div>`+unseen.slice(0,4).map(c=>`<div class="apr"><span>${esc(c.text)}</span>${link(c)?`<a href="#" class="alink" data-alink="${link(c)}">View</a>`:''}</div>`).join('');
   box.classList.remove('in','out');void box.offsetWidth;box.classList.add('in');
   clearTimeout(showChanges.t);const hide=()=>{showChanges.t=setTimeout(()=>{box.classList.add('out');box.classList.remove('in')},1300)};
   box.onmouseenter=()=>clearTimeout(showChanges.t);box.onmouseleave=hide;hide();
 }
+// One time: find the email behind older log rows and timeline steps, so everything can be linked. Read only.
+let linking=false;
+async function linkOldMail(){if(linking||!GOOGLE.connected||store.get('jobimp-linked-v1'))return;linking=true;
+  try{for(let i=0;i<80;i++){const r=await api('/api/agent',{op:'linkold'});if(!r.left){store.set('jobimp-linked-v1','1');break}}await pull(true)}catch{}finally{linking=false}}
 async function afterChange(d){if(!d.changed)return;await pull(true);setTimeout(()=>showChanges(d.changes),60)}
 const amode=()=>AMODE||(AMODE=store.get('jobimp-agent-mode')==='auto'?'auto':'plan');
 function undoBtn(id){return id?`<div class="acts"><button class="act" data-aundo="${id}">Undo</button></div>`:''}
 async function askAgent(raw,sc){
   const h=hist[sc]||(hist[sc]=[]);h.push({role:'user',content:raw});
   const t=bubble(sc,'bot typing','<i></i><i></i><i></i>');const j=jobOf(sc);
-  try{const d=await api('/api/agent',{messages:h.slice(-20),jobId:j?j.id:null,mode:amode()});t.remove();h.push({role:'assistant',content:d.text});
+  try{const d=await api('/api/agent',{messages:h.slice(-20),jobId:j?j.id:null,mode:amode(),screen:screenCtx()});t.remove();h.push({role:'assistant',content:d.text});
     if(d.plan){const k=++planN;plans[k]={calls:d.plan,sc,ask:raw};say(sc,agentFmt(d.text),null,`<div class="acts"><button class="act pri" data-aplan="${k}">Do it</button><button class="act" data-acancel="${k}">Cancel</button></div>`)}
     else say(sc,agentFmt(d.text),null,undoBtn(d.undoId));
+    const pts=[...d.text.matchAll(/\]\(point:(\d+)\)/g)].map(m=>document.querySelector(`[data-aref="${m[1]}"]`)).filter(Boolean);if(pts.length&&!matchMedia('(max-width:1240px)').matches)pts.forEach(glow);
     afterChange(d)}
   catch(e){t.remove();h.pop();say(sc,esc(e.status===503?'The AI key is not set yet, so I can’t answer.':'Sorry, I couldn’t answer just now. Try again.'))}
 }
@@ -542,7 +585,7 @@ function signOut(){store.del('jobimp-token');store.del('jobimp-account');api('/a
 async function openReal(){
   const d=await api('/api/jobs');loadReal(d);startApp();
   try{api('/api/jobs',{op:'tz',tz:Intl.DateTimeFormat().resolvedOptions().timeZone})}catch{}
-  if(GOOGLE.importing&&GOOGLE.ai!==false)runImport();
+  if(GOOGLE.importing&&GOOGLE.ai!==false)runImport();else linkOldMail();
 }
 $('#login').addEventListener('click',async e=>{
   if(e.target.closest('[data-acc="demo"]')){if($('#rem').checked)store.set('jobimp-account','demo');loadDemo();startApp();return}
@@ -651,7 +694,7 @@ function visualTimeline(j){
 /* tap a timeline step: see its email or calendar event, with files. Read only. */
 const IC_CLIP='<path d="M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15 7"/>';
 // Steps made inside the app (moves, auto-close) have no email behind them.
-const stepTap=(x,m)=>REAL&&(m?.id||!/^(Moved to |Closed|Saved for later|Added |Interview \(coming up\))/.test(String(x)));
+const stepTap=(x,m)=>REAL&&m?.s!=='agent'&&m?.s!=='none'&&(m?.id||!/^(Moved to |Closed|Saved for later|Added |Interview \(coming up\))/.test(String(x)));
 const fsize=n=>n>=1e6?(n/1e6).toFixed(1)+' MB':n>=1e3?Math.round(n/1e3)+' KB':n?n+' B':'';
 const fmtWhen=t=>{const d=new Date(t);return isNaN(d)?'':d.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 const nameOf=s=>String(s||'').replace(/\s*<[^>]*>/g,'').replace(/"/g,'').trim()||String(s||'');
