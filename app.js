@@ -119,14 +119,14 @@ function renderJobs(){
   if(jobsMode==='board'){
     h+=`<div class="cols">${ST.map(s=>{const js=jobs.filter(j=>j.status===s);return`<div class="col" data-drop="${s}"><h4>${s==='saved'?`<span class="bm" title="Saved">${I(IC_BOOKMARK)}</span>`:`<span class="st ${s}">${SL[s]}</span>`}<span class="c">${js.length}</span></h4>
      ${js.map(j=>`<button class="kc" data-open="${j.id}" data-drag="${j.id}"><div class="co">${esc(j.co)}</div><div class="rl">${esc(j.role)}</div>
-     <div class="ft"><span>${j.next?j.next.split(',')[0]:j.days!=null&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':''}</span></div>${delBtn(j)}</button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
+     <div class="ft"><span>${j.next?j.next.split(',')[0]:j.days!=null&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':closedWhy(j)}</span></div>${delBtn(j)}</button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
      <div class="note" style="margin-top:14px">Click a card to open it. Its agent opens on the right.</div>`;
   }else{
     const js=jobs.filter(j=>j.status===jobTab);
     h+=`<div class="tabsline">${ST.map(s=>`<button class="${s===jobTab?'on':''}" data-s="${s}" data-drop="${s}"${s==='saved'?' title="Saved" aria-label="Saved"':''}>${s==='saved'?`<span class="bm">${I(IC_BOOKMARK)}</span>`:SL[s]}<span class="n">${jobs.filter(j=>j.status===s).length}</span></button>`).join('')}</div>
     ${js.length?`<div class="list" style="margin-top:4px">${js.map(j=>`<button class="row" data-open="${j.id}" data-drag="${j.id}">${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)}</div><div class="t2">${esc(j.role)}${j.loc?' · '+esc(j.loc):''}</div>${j.next?`<div class="next">${j.next}</div>`:''}</div>
      <span class="src">${j.src}</span>
-     ${(j.status==='applied'||j.status==='interview')&&j.days!=null?`<div class="days${j.days>=10&&j.status==='applied'?' hot':''}"><div class="n">${j.days}d</div><div class="l">applied</div></div>`:'<div class="days"></div>'}${delBtn(j)}<span class="chev">›</span></button>`).join('')}</div>`:`<div class="empty">Nothing here yet.</div>`}`;
+     ${(j.status==='applied'||j.status==='interview')&&j.days!=null?`<div class="days${j.days>=10&&j.status==='applied'?' hot':''}"><div class="n">${j.days}d</div><div class="l">applied</div></div>`:closedWhy(j)?`<div class="days why-c${closedWhy(j)==='Rejected'?' bad':''}">${closedWhy(j)}</div>`:'<div class="days"></div>'}${delBtn(j)}<span class="chev">›</span></button>`).join('')}</div>`:`<div class="empty">Nothing here yet.</div>`}`;
   }
   $('#page').innerHTML=h;
 }
@@ -135,6 +135,35 @@ $('#page').addEventListener('click',e=>{
   const m=e.target.closest('[data-mode]');if(m){jobsMode=m.dataset.mode;render(true);return}
   const s=e.target.closest('[data-s]');if(s){jobTab=s.dataset.s;renderJobs()}
 });
+
+/* why a job is closed: from its timeline */
+function closedWhy(j){
+  if(j.status!=='closed')return '';
+  for(const t of j.tl){const x=String(t[1]);
+    if(/no news for/i.test(x))return 'No reply';
+    if(/reject|not move forward|other candidates/i.test(x))return 'Rejected';
+    if(/withdr/i.test(x))return 'You withdrew';
+    if(/^closed$/i.test(x))return 'Closed by you';}
+  return 'Closed';
+}
+const IC_EDIT='<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>';
+function editJob(){
+  const j=curJob;if(!j)return;
+  const others=jobs.filter(x=>x.id!==j.id).sort((a,b)=>(b.co.toLowerCase()[0]===j.co.toLowerCase()[0])-(a.co.toLowerCase()[0]===j.co.toLowerCase()[0])||a.co.localeCompare(b.co));
+  openModal('Edit job',`<div class="edf"><label>Company<input id="edCo" value="${esc(j.co)}" maxlength="80"></label>
+    <label>Role<input id="edRole" value="${esc(j.role||'')}" maxlength="120"></label>
+    <button class="pbtn pri" id="edSave">Save</button></div>
+    ${others.length?`<div class="lbl">Same job twice?</div><div class="t2" style="margin-bottom:10px">Merge this job into another one. Their timelines join and this copy goes away.</div>
+    <div class="edf row2"><select id="edInto" aria-label="Merge into"><option value="">Choose the other job…</option>${others.map(x=>`<option value="${x.id}">${esc(x.co)} · ${esc(x.role||'')}</option>`).join('')}</select><button class="pbtn" id="edMerge">Merge</button></div>`:''}`);
+  $('#edSave').onclick=async()=>{
+    const co=$('#edCo').value.trim(),role=$('#edRole').value.trim();if(!co){toast('Company is needed');return}
+    if(!REAL){j.co=co;j.role=role;closeModal();render();return}
+    try{await api('/api/jobs',{op:'edit',id:j.id,co,role});closeModal();await pull(true);toast('Saved')}catch(x){toast(x.message||'Could not save.')}};
+  const m=$('#edMerge');if(m)m.onclick=async()=>{
+    const into=+$('#edInto').value,t=jobs.find(x=>x.id===into);if(!t){toast('Choose the other job first');return}
+    if(!REAL){t.tl=[...t.tl,...j.tl];jobs=jobs.filter(x=>x!==j);curJob=t;closeModal();show('job');toast(`Merged into ${t.co}`);return}
+    try{await api('/api/jobs',{op:'merge',from:j.id,into});closeModal();await pull(true);curJob=jobs.find(x=>x.id===into)||null;show(curJob?'job':'jobs');toast(`Merged into ${t.co}`)}catch(x){toast(x.message||'Could not merge.')}};
+}
 
 /* job page */
 function openJob(id){const j=jobs.find(x=>x.id===id);if(!j)return;curJob=j;show('job');openAgentMobile(false)}
@@ -148,7 +177,7 @@ function renderJob(){
   else if(j.status==='closed')n=`I can show what to change for similar roles.`;
   else n=`I can compare this offer with market pay.`;
   $('#page').innerHTML=`<button class="back" data-back>‹ My jobs</button>
-  <div class="dh">${av(j.co,'lg')}<div style="flex:1"><h2>${esc(j.role)}</h2><div class="t2">${esc(j.co)}${j.loc?' · '+esc(j.loc):''} · <span class="src">${j.src}</span></div></div><button class="sbtn" data-del="${j.id}" title="Remove this job" aria-label="Remove this job">${I(IC_TRASH)}</button></div>
+  <div class="dh">${av(j.co,'lg')}<div style="flex:1"><h2>${esc(j.role)}</h2><div class="t2">${esc(j.co)}${j.loc?' · '+esc(j.loc):''} · <span class="src">${j.src}</span>${closedWhy(j)?` · <span class="why-c${closedWhy(j)==='Rejected'?' bad':''}">${closedWhy(j)}</span>`:''}</div></div><button class="sbtn ed" data-edit title="Edit or merge" aria-label="Edit or merge this job">${I(IC_EDIT)}</button><button class="sbtn" data-del="${j.id}" title="Remove this job" aria-label="Remove this job">${I(IC_TRASH)}</button></div>
   <div class="tabsline" style="margin-top:26px">${ST.map(s=>`<button class="${s===j.status?'on':''}" data-st="${s}"${s==='saved'?' title="Saved" aria-label="Saved"':''}>${s==='saved'?`<span class="bm">${I(IC_BOOKMARK)}</span>`:SL[s]}</button>`).join('')}</div>
   <div class="grid2" style="margin-top:26px">
     <div>${j.days!=null&&j.status!=='saved'?`<div class="count"><b>${j.days}</b>days since you applied</div><div style="margin-top:8px">${track(j,false)}${axis}</div>`:j.since?`<div class="count">In touch since ${esc(j.since)}. Apply date not in your email.</div>`:`<div class="count">Not applied yet. Apply early: replies drop after day 2.</div>`}
@@ -164,6 +193,7 @@ function renderJob(){
 $('#page').addEventListener('click',e=>{
   if(view!=='job')return;
   if(e.target.closest('[data-back]')){show('jobs');return}
+  if(e.target.closest('[data-edit]')){editJob();return}
   const tm=e.target.closest('[data-tlm]');if(tm){tlMode=tm.dataset.tlm;renderJob();return}
   const s=e.target.closest('[data-st]');if(s){setStatus(curJob,s.dataset.st);toast(`Moved to ${SL[s.dataset.st]}`);render();renderABar()}
 });
