@@ -182,7 +182,7 @@ function renderJob(){
   <div class="grid2" style="margin-top:26px">
     <div>${j.days!=null&&j.status!=='saved'?`<div class="count"><b>${j.days}</b>days since you applied</div><div style="margin-top:8px">${track(j,false)}${axis}</div>`:j.since?`<div class="count">In touch since ${esc(j.since)}. Apply date not in your email.</div>`:`<div class="count">Not applied yet. Apply early: replies drop after day 2.</div>`}
       <div class="tlh"><div class="lbl">Timeline</div><div class="seg sm">${['Timeline','List'].map(m=>`<button class="${tlMode===m?'on':''}" data-tlm="${m}">${m}</button>`).join('')}</div></div>
-      ${tlMode==='List'?`<div class="list tl">${j.tl.map(t=>`<div class="row"><span class="d">${t[0]}</span><span class="x">${esc(t[1])}</span></div>`).join('')}</div>`:visualTimeline(j)}</div>
+      ${tlMode==='List'?`<div class="list tl">${j.tl.map((t,k)=>`<div class="row${stepTap(t[1],t[2])?' tap':''}"${stepTap(t[1],t[2])?` data-step="${k}" role="button" tabindex="0"`:''}><span class="d">${t[0]}</span><span class="x">${esc(t[1])}${t[2]?.f?`<span class="clip">${I(IC_CLIP)}</span>`:''}</span></div>`).join('')}</div>`:visualTimeline(j)}</div>
     <div><button class="nudge" data-cmd="${esc(jobChips(j)[0])}"><span class="spark">${I(SPARK)}</span><div class="txt">${n}<div class="more">${esc(jobChips(j)[0])} →</div></div></button>
       <div class="lbl">Actions</div><div class="list">
       <button class="row" data-recfor="${esc(j.co)}"><span class="txt t1" style="font-weight:400">Record an interview</span><span class="chev">›</span></button>
@@ -194,6 +194,7 @@ $('#page').addEventListener('click',e=>{
   if(view!=='job')return;
   if(e.target.closest('[data-back]')){show('jobs');return}
   if(e.target.closest('[data-edit]')){editJob();return}
+  const st=e.target.closest('[data-step]');if(st){openStep(curJob,+st.dataset.step);return}
   const tm=e.target.closest('[data-tlm]');if(tm){tlMode=tm.dataset.tlm;renderJob();return}
   const s=e.target.closest('[data-st]');if(s){setStatus(curJob,s.dataset.st);toast(`Moved to ${SL[s.dataset.st]}`);render();renderABar()}
 });
@@ -564,7 +565,7 @@ function tlDate(label){
 }
 function visualTimeline(j){
   const t0=new Date(new Date().toDateString());
-  let ev=j.tl.map(t=>({d:tlDate(t[0]),label:t[0],x:t[1]})).filter(e=>e.d).sort((a,b)=>a.d-b.d);
+  let ev=j.tl.map((t,k)=>({d:tlDate(t[0]),label:t[0],x:t[1],k,m:t[2]})).filter(e=>e.d).sort((a,b)=>a.d-b.d);
   if(!ev.length)return '<div class="empty">No dates yet.</div>';
   const items=[];let todayIn=false;
   ev.forEach(e=>{if(!todayIn&&e.d>t0){items.push({today:true,d:t0});todayIn=true}items.push(e)});
@@ -575,9 +576,50 @@ function visualTimeline(j){
     if(i){const g=dn(items[i-1].d,e.d),px=Math.round(Math.min(64,6+Math.sqrt(g)*9));
       h+=`<div class="vg" style="height:${px}px">${g>0?`<span>${g} day${g===1?'':'s'}</span>`:''}</div>`}
     if(e.today)h+=`<div class="ve today"><i></i><span class="vd">Today</span><span class="vx"></span></div>`;
-    else h+=`<div class="ve${e.d>t0?' fut':''}${/reject|closed/i.test(e.x)?' bad':''}"><i></i><span class="vd">${esc(e.label)}</span><span class="vx">${esc(e.x)}</span></div>`;
+    else h+=`<div class="ve${e.d>t0?' fut':''}${/reject|closed/i.test(e.x)?' bad':''}${stepTap(e.x,e.m)?' tap':''}"${stepTap(e.x,e.m)?` data-step="${e.k}" role="button" tabindex="0"`:''}><i></i><span class="vd">${esc(e.label)}</span><span class="vx">${esc(e.x)}${e.m?.f?`<span class="clip" title="${e.m.f} file${e.m.f>1?'s':''}">${I(IC_CLIP)}</span>`:''}</span></div>`;
   });
   return `<div class="vtl">${h}</div>`;
+}
+
+/* tap a timeline step: see its email or calendar event, with files. Read only. */
+const IC_CLIP='<path d="M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15 7"/>';
+// Steps made inside the app (moves, auto-close) have no email behind them.
+const stepTap=(x,m)=>REAL&&(m?.id||!/^(Moved to |Closed|Saved for later|Added |Interview \(coming up\))/.test(String(x)));
+const fsize=n=>n>=1e6?(n/1e6).toFixed(1)+' MB':n>=1e3?Math.round(n/1e3)+' KB':n?n+' B':'';
+const fmtWhen=t=>{const d=new Date(t);return isNaN(d)?'':d.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
+const nameOf=s=>String(s||'').replace(/\s*<[^>]*>/g,'').replace(/"/g,'').trim()||String(s||'');
+async function openStep(j,k){
+  const t=j?.tl[k];if(!t)return;
+  openModal(esc(t[1]),`<div class="t2 logpad">Opening…</div>`);
+  try{
+    let m=t[2];
+    if(!m?.id){
+      const t0=j.tl0?.[k]||t; // the saved step (its text can differ on screen, e.g. "(done)")
+      const r=await api('/api/jobs',{op:'findmail',id:j.id,label:t0[0],text:t0[1]});m=r.meta;
+      if(!m){$('#mBody').innerHTML=`<div class="t2 logpad">No email found for ${esc(j.co)} on ${esc(t[0])}.</div>`;return}
+      t[2]=m;t0[2]=m;
+    }
+    if(m.s==='calendar'){const {event:e}=await api('/api/jobs?event='+encodeURIComponent(m.id));$('#mBody').innerHTML=eventHtml(e);return}
+    const {mail,account}=await api('/api/jobs?mail='+encodeURIComponent(m.id));$('#mBody').innerHTML=mailHtml(mail,account);
+  }catch(x){$('#mBody').innerHTML=`<div class="t2 logpad">${esc(x.message||'Could not open this email.')}</div>`}
+}
+function filesHtml(files,mk){return files.length?`<div class="files">${files.map(f=>`<a class="fchip" href="${mk(f)}" target="_blank" rel="noopener">${I(IC_CLIP)}<span class="fn">${esc(f.name)}</span>${f.size?`<span class="fs">${fsize(f.size)}</span>`:''}</a>`).join('')}</div>`:''}
+function mailHtml(m,acc){
+  const q=f=>`/api/jobs?${new URLSearchParams({mail:m.id,att:f.id,name:f.name,type:f.type})}`;
+  return `<div class="mail"><div class="t1">${esc(m.subject||'(no subject)')}</div>
+    <div class="t3">${m.sent?'You sent this':'From '+esc(nameOf(m.from))} · ${esc(fmtWhen(m.at))}</div>
+    ${m.sent?`<div class="t3">To ${esc(nameOf(m.to))}</div>`:''}
+    ${filesHtml(m.files||[],q)}
+    <div class="mtext">${esc(m.text||'')}</div>
+    <a class="link" href="https://mail.google.com/mail/?${new URLSearchParams({authuser:acc||''})}#all/${encodeURIComponent(m.thread||m.id)}" target="_blank" rel="noopener">Open in Gmail ↗</a></div>`;
+}
+function eventHtml(e){
+  return `<div class="mail"><div class="t1">${esc(e.title||'(no title)')}</div>
+    <div class="t3">${esc(fmtWhen(e.start))}${e.status==='cancelled'?' · Canceled':''}${e.organizer?' · '+esc(e.organizer):''}</div>
+    ${filesHtml(e.files||[],f=>f.url)}
+    ${/^https:/.test(e.meet||'')?`<a class="link" href="${esc(e.meet)}" target="_blank" rel="noopener">Join the video call ↗</a>`:''}
+    ${e.text?`<div class="mtext">${esc(e.text)}</div>`:''}
+    ${/^https:/.test(e.link||'')?`<a class="link" href="${esc(e.link)}" target="_blank" rel="noopener">Open in Calendar ↗</a>`:''}</div>`;
 }
 
 /* settings: auto-close days, and the email log (what Claude decided for each email) */
@@ -591,9 +633,17 @@ function renderSettings(){
     ${REAL?`<div class="lbl">Email log</div>
       <div class="logh"><div class="t2">What the Agent read in your email, what it changed in your jobs, and why. Nothing is changed in Gmail.</div>
       <button class="pbtn sm" id="logTog" aria-expanded="${LOGST.open}">${LOGST.open?'Hide log':'Show log'}</button></div>
-      <div class="coll${LOGST.open?' open':''}" id="logColl"><div><div id="logBody">${logHtml()}</div></div></div>`:''}`;
+      <div class="coll${LOGST.open?' open':''}" id="logColl"><div><div id="logBody">${logHtml()}</div></div></div>
+      ${GOOGLE.connected?`<div class="lbl">Re-read Gmail</div>
+      <div class="logh"><div class="t2">Rebuild My jobs from your Gmail and Calendar (last 6 months), including emails you sent. Your current list is saved first.</div>
+      <button class="pbtn sm" id="reread">Re-read all</button></div>
+      ${SETTINGS.backup?`<button class="link" id="restore" style="font-size:13.8px">Bring back my previous list</button>`:''}`:''}`:''}`;
   $('#saveClose').onclick=saveClose;
   if(REAL)$('#logTog').onclick=toggleLog;
+  const rr=$('#reread');if(rr)rr.onclick=()=>{
+    openModal('Re-read all Gmail?',`<div class="t2" style="margin-bottom:18px">My jobs will be rebuilt from your Gmail and Calendar (last 6 months). Edits and moves you made by hand will be replaced. Your current list is saved, and you can bring it back here.</div><button class="pbtn pri" id="rrGo">Yes, re-read</button>`);
+    $('#rrGo').onclick=async()=>{try{$('#rrGo').disabled=true;await api('/api/jobs',{op:'rebuild'});closeModal();LOGST.rows=null;await pull(true);toast('Reading your Gmail again…');runImport()}catch(x){toast(x.message||'Could not start.')}}};
+  const rs=$('#restore');if(rs)rs.onclick=async()=>{try{await api('/api/jobs',{op:'restore'});await pull(true);toast('Your previous list is back')}catch(x){toast(x.message||'Could not bring it back.')}};
 }
 /* email log: closed by default; open shows the last 5, "Show more" shows 15 per page with Older / Newer */
 const LOGST={open:false,mode:'peek',page:0,rows:null,total:0};
@@ -688,10 +738,11 @@ function refreshTime(){
       else if(at.toDateString()===TODAY.toDateString())j.next=`Today, ${hm}`;
       else if(at.toDateString()===tmr.toDateString())j.next=`Tomorrow, ${hm}`;
       else{const n=Math.round((new Date(at.toDateString())-TODAY)/DAY);j.next=`${j.nextRaw} · in ${n} days`}}
-    j.tl=j.tl0.map(([d,x])=>{if(!/\(coming up\)/.test(x))return[d,x];const dd=tlDate(d);
-      if(!dd||dd>TODAY)return[d,x];
-      if(dd.getTime()===TODAY.getTime()&&!j.doneAt)return[d,x.replace('(coming up)','(today)')];
-      return[d,x.replace(/^Next /,'').replace(/\s*\(coming up\)/,'').replace(/^./,c=>c.toUpperCase())+' (done)']});
+    // m = which email or event the step came from (kept so the step opens it)
+    j.tl=j.tl0.map(([d,x,m])=>{const w=(a,b)=>m?[a,b,m]:[a,b];if(!/\(coming up\)/.test(x))return w(d,x);const dd=tlDate(d);
+      if(!dd||dd>TODAY)return w(d,x);
+      if(dd.getTime()===TODAY.getTime()&&!j.doneAt)return w(d,x.replace('(coming up)','(today)'));
+      return w(d,x.replace(/^Next /,'').replace(/\s*\(coming up\)/,'').replace(/^./,c=>c.toUpperCase())+' (done)')});
   });
   return before!==JSON.stringify(jobs.map(j=>[j.next,j.days,j.tl]));
 }

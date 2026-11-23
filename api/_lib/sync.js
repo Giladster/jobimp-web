@@ -49,6 +49,7 @@ function pickJob(jobs, co, role) {
   const r = norm(role);
   return (r && same.find(j => norm(j.role) === r || norm(j.role).includes(r) || r.includes(norm(j.role)))) || same.find(j => j.status !== 'closed') || same[0];
 }
+const SENT_KINDS = ['submitted', 'followup', 'replied'];
 const SLABEL = { saved: 'Saved', applied: 'Awaiting reply', interview: 'Interview', offer: 'Offer', closed: 'Closed' };
 const STATUS_OF = { applied: 'applied', invited: 'interview', scheduled: 'interview', assignment: 'interview', update: 'interview', rejected: 'closed', offer: 'offer' };
 
@@ -58,10 +59,11 @@ async function applyEvent(user, ev, jobs) {
   const at = ev.kind === 'scheduled' || ev.kind === 'invited' ? fromLocal(ev.interview_at, tz) : null;
   const day = isoDay(ev.date, tz), lab = label(ev.date, tz);
   const note = (ev.note || '').trim().slice(0, 60) || 'Update';
-  const meta = { s: ev.src, id: ev.extId };
+  const meta = { s: ev.src, id: ev.extId }; if (ev.nfiles) meta.f = ev.nfiles;
   let j = findJob(jobs, ev.company, ev.role);
+  const mine = ev.sent || SENT_KINDS.includes(ev.kind);
   if (!j) {
-    if (ev.kind === 'none' || ev.kind === 'update') return null;
+    if (ev.kind === 'none' || ev.kind === 'update' || (mine && ev.kind !== 'applied')) return null;
     const { rows } = await q(`insert into jobs (user_id, co, role, src, status, applied, first_reply, tl) values ($1,$2,$3,'Email',$4,$5,$6,'[]') returning *`,
       [user.id, ev.company.slice(0, 80), (ev.role || '').slice(0, 120) || 'Role not named', STATUS_OF[ev.kind], ev.kind === 'applied' ? day : null, ev.kind === 'applied' ? null : day]);
     j = rows[0]; jobs.push(j);
@@ -78,7 +80,7 @@ async function applyEvent(user, ev, jobs) {
   else if (ev.kind === 'offer') status = 'offer';
   else if (ev.kind === 'applied') { if (status === 'saved') status = 'applied'; if (!applied) applied = day; }
   else if (STATUS_OF[ev.kind] === 'interview' && status !== 'offer') status = 'interview';
-  if (ev.kind !== 'applied' && ev.kind !== 'none' && !firstReply) firstReply = day;
+  if (!mine && ev.kind !== 'applied' && ev.kind !== 'none' && ev.kind !== 'canceled' && !firstReply) firstReply = day;
   if (at && at > now) {
     next = nextRaw(at, tz);
     tl = tl.filter(notUpcoming);
@@ -118,7 +120,8 @@ async function autoClose(user) {
 
 /* ---------- Gmail ---------- */
 const JOBBY = /(application|applying|applied|interview|candidate|candidacy|position|role|recruit|hiring|talent|career|opportunit|assignment|home task|offer|thank you for your interest|unfortunately|next steps|move forward|ראיון|מועמד|משרה|תפקיד|קורות חיים|גיוס)/i;
-const SKIP_LABELS = ['SPAM', 'TRASH', 'SENT', 'DRAFT', 'CHAT', 'CATEGORY_PROMOTIONS'];
+const SKIP_LABELS = ['SPAM', 'TRASH', 'DRAFT', 'CHAT', 'CATEGORY_PROMOTIONS'];
+const SENT_SEARCH = 'in:sent -in:chats';
 const SKIP_FROM = /jobalerts-noreply@linkedin|jobs-listings@|newsletter|digest@/i;
 const SEARCH = '-in:sent -in:chats -category:promotions -category:social (application OR applying OR applied OR interview OR candidate OR position OR recruiter OR recruiting OR "thank you for your interest" OR unfortunately OR "next steps" OR assignment OR offer OR ראיון OR מועמדות OR משרה)';
 
@@ -146,6 +149,7 @@ async function classifyAndApply(user, items) {
   results.sort((a, b) => a.date - b.date);
   let n = 0; const logs = [];
   for (const r of results) {
+    if (r.sent && !['applied', ...SENT_KINDS, 'none'].includes(r.kind)) r.kind = 'none';
     // Plain words for the email log in Settings.
     let did = 'Skipped: not about a job application';
     if (r.job_related && !r.company) did = "Skipped: couldn't tell which company";
@@ -179,8 +183,15 @@ async function processMessages(user, ids) {
   if (!mine.length) return 0;
   try {
     const msgs = (await pool(mine, 5, id => getMessage(user, id).catch(e => (e.status === 404 ? null : Promise.reject(e))))).filter(Boolean);
-    const items = msgs.filter(m => !m.labels.some(l => SKIP_LABELS.includes(l)) && !SKIP_FROM.test(m.from) && JOBBY.test(m.subject + ' ' + m.snippet + ' ' + m.text.slice(0, 3000)))
-      .map(m => ({ type: 'email', src: 'gmail', extId: m.id, date: m.at, from: m.from, subject: m.subject, text: m.text }));
+    // Emails you sent count when they look job related or go to a company in My jobs.
+    const known = (await loadJobs(user)).filter(j => !j.removed).map(j => norm(j.co)).filter(n => n.length > 2);
+    const toKnown = m => { const t = norm((m.to + ' ' + m.cc).replace(/@/g, ' ')); return known.some(n => t.includes(n)); };
+    const isSent = m => m.labels.includes('SENT');
+    const items = msgs.filter(m => !m.labels.some(l => SKIP_LABELS.includes(l)) && (isSent(m)
+        ? JOBBY.test(m.subject + ' ' + m.text.slice(0, 3000)) || toKnown(m)
+        : !SKIP_FROM.test(m.from) && JOBBY.test(m.subject + ' ' + m.snippet + ' ' + m.text.slice(0, 3000))))
+      .map(m => ({ type: 'email', src: 'gmail', sent: isSent(m), extId: m.id, date: m.at, from: m.from, to: m.to, subject: m.subject, text: m.text,
+        files: m.files.map(f => f.name).join(', '), nfiles: m.files.length }));
     return await classifyAndApply(user, items);
   } catch (e) { await unclaim(user, 'gmail', mine); throw e; }
 }
@@ -233,6 +244,13 @@ async function importStep(user) {
     const list = await gapi(user, `${GM}/messages?${p}`);
     const ids = (list.messages || []).map(m => m.id);
     st.jobs += await processMessages(user, ids); st.n += ids.length;
+    st.page = list.nextPageToken || null; if (!st.page) st.phase = 'sent';
+  } else if (st.phase === 'sent') {
+    const after = Math.floor(from.getTime() / 1000);
+    const p = new URLSearchParams({ q: `after:${after} ${SENT_SEARCH}`, maxResults: '25' }); if (st.page) p.set('pageToken', st.page);
+    const list = await gapi(user, `${GM}/messages?${p}`);
+    const ids = (list.messages || []).map(m => m.id);
+    st.jobs += await processMessages(user, ids); st.n += ids.length;
     st.page = list.nextPageToken || null; if (!st.page) st.phase = 'cal';
   } else if (st.phase === 'cal') {
     const p = new URLSearchParams({ timeMin: from.toISOString(), timeMax: new Date(Date.now() + 120 * 864e5).toISOString(), singleEvents: 'true', maxResults: '250' });
@@ -264,8 +282,10 @@ async function catchUp(user, historyHint) {
     if (gone) {
       // History too old: search recent mail instead.
       const since = Math.floor((user.last_sync ? new Date(user.last_sync).getTime() - 864e5 : Date.now() - 7 * 864e5) / 1000);
-      const list = await gapi(user, `${GM}/messages?${new URLSearchParams({ q: `after:${since} ${SEARCH}`, maxResults: '50' })}`);
-      (list.messages || []).forEach(m => ids.push(m.id));
+      for (const qq of [SEARCH, SENT_SEARCH]) {
+        const list = await gapi(user, `${GM}/messages?${new URLSearchParams({ q: `after:${since} ${qq}`, maxResults: '50' })}`);
+        (list.messages || []).forEach(m => ids.push(m.id));
+      }
       latest = String(historyHint || (await gapi(user, `${GM}/profile`)).historyId);
     }
     n += await processMessages(user, ids);
@@ -289,7 +309,7 @@ async function startWatches(user, base) {
   const out = { gmail: false, calendar: false };
   if (process.env.GOOGLE_PUBSUB_TOPIC) {
     try {
-      const w = await gapi(user, `${GM}/watch`, { method: 'POST', json: { topicName: process.env.GOOGLE_PUBSUB_TOPIC, labelIds: ['INBOX'], labelFilterBehavior: 'include' } });
+      const w = await gapi(user, `${GM}/watch`, { method: 'POST', json: { topicName: process.env.GOOGLE_PUBSUB_TOPIC, labelIds: ['INBOX', 'SENT'], labelFilterBehavior: 'include' } });
       await q(`update users set gmail_watch_exp=$2, gmail_history=coalesce(gmail_history,$3) where id=$1`, [user.id, +w.expiration, String(w.historyId)]);
       out.gmail = true;
     } catch (e) { console.error('gmail watch failed', e.message); }
@@ -306,4 +326,28 @@ async function startWatches(user, base) {
   return out;
 }
 
-module.exports = { labelDate, autoClose, importStep, catchUp, startWatches, processEvents, applyEvent, nextRaw, fromLocal, label };
+/* ---------- re-read everything: back up the list, empty it, read Gmail + Calendar again ---------- */
+async function rebuild(user, days = 180) {
+  const { rows } = await q('select * from jobs where user_id=$1 order by id', [user.id]);
+  await q('insert into jobs_backup (user_id, data) values ($1, $2)', [user.id, JSON.stringify(rows)]);
+  await q('delete from jobs where user_id=$1', [user.id]);
+  await q('delete from seen where user_id=$1', [user.id]);
+  await q('delete from ai_log where user_id=$1', [user.id]);
+  const from = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
+  await q(`update users set synced_from=$2, import_state='{"phase":"gmail","n":0,"jobs":0}'::jsonb where id=$1`, [user.id, from]);
+  return rows.length;
+}
+async function restore(user) {
+  const { rows } = await q('select * from jobs_backup where user_id=$1 order by id desc limit 1', [user.id]);
+  if (!rows[0]) return 0;
+  await q('delete from jobs where user_id=$1', [user.id]);
+  for (const j of rows[0].data) {
+    await q(`insert into jobs (user_id, co, role, src, status, applied, first_reply, next_raw, tl, removed) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [user.id, j.co, j.role, j.src, j.status, j.applied, j.first_reply, j.next_raw, JSON.stringify(j.tl || []), !!j.removed]);
+  }
+  await q('delete from jobs_backup where id=$1', [rows[0].id]);
+  await q('update users set import_state=null where id=$1', [user.id]);
+  return rows[0].data.length;
+}
+
+module.exports = { rebuild, restore, norm, labelDate, autoClose, importStep, catchUp, startWatches, processEvents, applyEvent, nextRaw, fromLocal, label };
