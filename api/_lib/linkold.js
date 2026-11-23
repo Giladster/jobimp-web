@@ -47,10 +47,13 @@ async function findStep(user, j, e, now) {
 // One small batch per call. Returns how many are still left.
 async function linkOld(user) {
   if (!user.refresh_enc) return { left: 0 };
+  if (user.import_state) return { left: 1, wait: true };
+  const limited = e => e && (e.status === 429 || e.limited);
   const { rows: logs } = await q(`select id, src, item_at, sender, subject from ai_log where user_id=$1 and src in ('gmail','calendar')
     and coalesce(result->>'id','') = '' and coalesce(result->>'kind','none') <> 'none' order by id desc limit 8`, [user.id]);
   await Promise.all(logs.map(async r => {
-    const id = await findLogItem(user, r).catch(() => '');
+    let id;
+    try { id = await findLogItem(user, r); } catch (e) { if (limited(e)) return; id = ''; } // rate limited: try again next time
     await q(`update ai_log set result = coalesce(result,'{}'::jsonb) || jsonb_build_object('id', $2::text) where id=$1`, [r.id, id || '-']);
   }));
   const { rows: jobs } = await q('select id, co, tl from jobs where user_id=$1 and not removed order by updated_at desc', [user.id]);
@@ -61,11 +64,11 @@ async function linkOld(user) {
     if (!todo.length) continue;
     if (steps >= 6) { stepsLeft += todo.length; continue; }
     const mine = todo.slice(0, 6 - steps); steps += mine.length; stepsLeft += todo.length - mine.length;
-    const found = await Promise.all(mine.map(k => findStep(user, j, tl[k], now).catch(() => null)));
+    const found = await Promise.all(mine.map(k => findStep(user, j, tl[k], now).catch(e => (limited(e) ? 'retry' : null))));
     // Re-read before writing, so a change made meanwhile is not lost.
     const { rows } = await q('select tl from jobs where id=$1', [j.id]);
     const cur = Array.isArray(rows[0]?.tl) ? rows[0].tl : [];
-    mine.forEach((k, i) => { const x = cur.findIndex(e => e[0] === tl[k][0] && e[1] === tl[k][1] && !e[2]); if (x >= 0) cur[x] = [cur[x][0], cur[x][1], found[i] || { s: 'none', id: '' }]; });
+    mine.forEach((k, i) => { const x = cur.findIndex(e => e[0] === tl[k][0] && e[1] === tl[k][1] && !e[2]); if (x >= 0 && found[i] !== 'retry') cur[x] = [cur[x][0], cur[x][1], found[i] || { s: 'none', id: '' }]; });
     await q('update jobs set tl=$2, updated_at=now() where id=$1', [j.id, JSON.stringify(cur)]);
   }
   const { rows: c } = await q(`select count(*)::int as n from ai_log where user_id=$1 and src in ('gmail','calendar') and coalesce(result->>'id','') = '' and coalesce(result->>'kind','none') <> 'none'`, [user.id]);

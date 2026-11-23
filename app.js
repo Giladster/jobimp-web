@@ -407,7 +407,7 @@ let linking=false;
 async function linkOldMail(){if(linking||!GOOGLE.connected||store.get('jobimp-linked-v1'))return;linking=true;
   try{for(let i=0;i<120;i++){if(importing)break;
       let r;try{r=await api('/api/agent',{op:'linkold'})}catch(x){if(x.status===429){await sleep(30e3);continue}throw x}
-      if(!r.left){store.set('jobimp-linked-v1','1');break}await sleep(1500)}
+      if(r.wait)break;if(!r.left){store.set('jobimp-linked-v1','1');break}await sleep(1500)}
     await pull(true)}catch{}finally{linking=false}}
 async function afterChange(d){if(!d.changed)return;await pull(true);setTimeout(()=>showChanges(d.changes),60)}
 const amode=()=>AMODE||(AMODE=store.get('jobimp-agent-mode')==='auto'?'auto':'plan');
