@@ -27,8 +27,11 @@ async function connect(req, res) {
   const g = await G.exchangeCode(String(qy.code), redirect);
   // One account per email address, however you sign in. Which account?
   // The signed-in one (connecting Gmail), else the one with this Google login or email, else a new one.
+  // Safety rule: match by email only when the email is confirmed (Google says so here; a future
+  // email + password signup must confirm the email with a code before it can be matched).
   let uid = st.u || null;
-  const { rows: found } = await q('select id from users where google_sub=$1 or lower(google_email)=lower($2) order by (google_sub=$1) desc', [g.sub, g.email || '']);
+  const email = g.verified ? (g.email || '') : '';
+  const { rows: found } = await q('select id from users where google_sub=$1 or ($2 <> \'\' and lower(google_email)=lower($2)) order by (google_sub=$1) desc', [g.sub, email]);
   if (!uid) uid = found[0]?.id || null;
   for (const other of found.filter(r => r.id !== uid)) {
     // An account made by "Continue with Google" only holds jobs read from Gmail; they are read again into this account.

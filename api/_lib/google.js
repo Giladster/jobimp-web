@@ -39,7 +39,7 @@ async function tokenCall(params) {
 async function exchangeCode(code, redirectUri) {
   const d = await tokenCall({ code, redirect_uri: redirectUri, grant_type: 'authorization_code' });
   const payload = JSON.parse(Buffer.from(String(d.id_token).split('.')[1], 'base64url').toString('utf8'));
-  return { refresh: d.refresh_token || null, access: d.access_token, exp: Date.now() + (d.expires_in - 60) * 1000, sub: payload.sub, email: payload.email, name: payload.given_name || payload.name || '' };
+  return { refresh: d.refresh_token || null, access: d.access_token, exp: Date.now() + (d.expires_in - 60) * 1000, sub: payload.sub, email: payload.email, verified: payload.email_verified === true || payload.email_verified === 'true', name: payload.given_name || payload.name || '' };
 }
 
 const cache = new Map(); // userId -> {access, exp}
