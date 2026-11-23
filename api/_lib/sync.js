@@ -44,6 +44,7 @@ function findJob(jobs, co, role) {
   const r = norm(role);
   return (r && same.find(j => norm(j.role) === r || norm(j.role).includes(r) || r.includes(norm(j.role)))) || same.find(j => j.status !== 'closed') || same[0];
 }
+const SLABEL = { saved: 'Saved', applied: 'Awaiting reply', interview: 'Interview', offer: 'Offer', closed: 'Closed' };
 const STATUS_OF = { applied: 'applied', invited: 'interview', scheduled: 'interview', assignment: 'interview', update: 'interview', rejected: 'closed', offer: 'offer' };
 
 /* ---------- apply one event to the jobs table ---------- */
@@ -140,12 +141,20 @@ async function classifyAndApply(user, items) {
   results.sort((a, b) => a.date - b.date);
   let n = 0; const logs = [];
   for (const r of results) {
-    let did = 'Ignored: not about your applications';
-    if (r.job_related && !r.company) did = 'Ignored: company unclear';
+    // Plain words for the email log in Settings.
+    let did = 'Skipped: not about a job application';
+    if (r.job_related && !r.company) did = "Skipped: couldn't tell which company";
     else if (r.job_related && r.kind !== 'none') {
-      const had = new Set(jobs.map(j => j.id));
+      const before = findJob(jobs, r.company, r.role), prev = before && { status: before.status, n: (before.tl || []).length };
       const j = await applyEvent(user, { ...r, extId: r.extId, src: r.src }, jobs);
-      if (j) { n++; did = (had.has(j.id) ? 'Updated ' : 'New job: ') + j.co + ' (' + j.status + ')'; } else did = 'No change';
+      if (!j) did = before?.removed ? `Skipped: you removed ${before.co}` : `Skipped: no ${r.company} job to update`;
+      else {
+        n++;
+        if (!prev) did = `${j.co}: new job added (${SLABEL[j.status] || j.status})`;
+        else if (prev.status !== j.status) did = `${j.co}: moved to ${SLABEL[j.status] || j.status}`;
+        else if ((j.tl || []).length > prev.n) did = `${j.co}: added "${r.note || 'Update'}" to timeline`;
+        else did = `${j.co}: already up to date`;
+      }
     }
     logs.push([r.src, r.date, String(r.from || '').slice(0, 200), String(r.subject || '').slice(0, 300),
       JSON.stringify({ did, company: r.company || '', role: r.role || '', kind: r.kind || 'none', note: r.note || '', why: r.why || '' })]);

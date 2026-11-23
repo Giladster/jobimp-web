@@ -26,7 +26,7 @@ For each item return:
 - kind: applied (application received or sent) | invited (asked to interview or to book a time) | scheduled (an interview with a set time) | assignment (home task) | rejected | offer | update (other real progress) | none.
 - interview_at: the interview start as local time "YYYY-MM-DDTHH:MM" if the item states a specific date and time, else null.
 - note: what happened, in English, 2 to 6 words, starting with a capital letter, e.g. "Invited to interview", "Rejected by email", "Home assignment", "Applied", "Interview set". No company name.
-- why: one short sentence on how you decided (which words or sender showed it), for a debug log.
+- why: one short, plain sentence a non-technical user understands, naming the clue you used. E.g. "The invite came from scaleops.com and sets an interview time." or "A Google Docs share request, not about a job." No jargon.
 Return one entry per input item, with the same i.`;
 
 function clip(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + ' …' : s; }

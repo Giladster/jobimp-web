@@ -555,17 +555,25 @@ function visualTimeline(j){
 function renderSettings(){
   const d=REAL?SETTINGS.closeDays:(+store.get('jobimp-close-demo')||16);
   const logH=!REAL?'':LOG===null?'<div class="t2">Loading…</div>':!LOG.length?`<div class="t2">${GOOGLE.connected?(GOOGLE.ai===false?'Waiting for the AI key. Nothing was read yet.':'Nothing read yet.'):'Connect Gmail to see what Claude reads.'}</div>`:
-    LOG.map(l=>{const r=l.result||{},off=/^Ignored|^No change/.test(r.did||'');
-      return `<div class="logr"><div class="t1">${esc(l.subject||'(no subject)')}</div><div class="t3">${l.src==='calendar'?'Calendar':'Gmail'} · ${esc(l.item_at?new Date(l.item_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'')} · ${esc(String(l.sender||'').replace(/\s*<[^>]*>/,'')||'')}</div>
-        <div class="did${off?' off':''}">${esc(r.did||'')}${r.note&&!off?' · '+esc(r.note):''}</div>${r.why?`<div class="t3">${esc(r.why)}</div>`:''}</div>`}).join('');
+    LOG.map(l=>{const r={...(l.result||{})};r.did=oldDid(r);const off=/^(Ignored|Skipped|No change)/.test(r.did||'');
+      return `<div class="logr"><div class="t1">${esc(l.subject||'(no subject)')}</div><div class="t3">${l.src==='calendar'?'Calendar':'Gmail'} · ${esc(l.item_at?new Date(l.item_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'')} · ${esc(String(l.sender||'').replace(/\s*<[^>]*>/,'').replace(/^"|"$/g,'')||'')}</div>
+        <div class="did${off?' off':''}"><b>Decision:</b> ${esc(r.did||'')}</div>${r.why?`<div class="why"><b>Why:</b> ${esc(r.why)}</div>`:''}</div>`}).join('');
   $('#page').innerHTML=`<div class="ph"><h1>Settings</h1></div>
     <div class="lbl" style="margin-top:0">Auto-close</div>
     <div class="setrow">Move a job to Closed after <input id="closeDays" type="number" min="0" max="365" value="${d}"> days with no news.<button class="pbtn" id="saveClose">Save</button></div>
     <div class="foot" style="margin-top:6px">Counts from the last email, interview or move. 0 means never.</div>
-    ${REAL?`<div class="lbl">Email log</div><div class="t2" style="margin-bottom:6px">Each email Claude read, what it decided, and why. Read only.</div><div>${logH}</div>`:''}`;
+    ${REAL?`<div class="lbl">Email log</div><div class="t2" style="margin-bottom:6px">Every job email Claude read: what it changed in your jobs, and why. Nothing is ever changed in Gmail.</div><div>${logH}</div>`:''}`;
   $('#saveClose').onclick=saveClose;
   if(REAL&&LOG===null)api('/api/jobs?log=1').then(r=>{LOG=r.log||[];if(view==='settings')renderSettings()}).catch(()=>{LOG=[];if(view==='settings')renderSettings()});
 }
+// Log rows saved before the clearer wording.
+const SLAB={saved:'Saved',applied:'Awaiting reply',interview:'Interview',offer:'Offer',closed:'Closed'};
+function oldDid(r){const d=r.did||'';let m;
+  if(m=/^Updated (.+) \((\w+)\)$/.exec(d))return `${m[1]}: added "${r.note||'Update'}" to timeline`;
+  if(m=/^New job: (.+) \((\w+)\)$/.exec(d))return `${m[1]}: new job added (${SLAB[m[2]]||m[2]})`;
+  if(/^Ignored: not about/.test(d))return 'Skipped: not about a job application';
+  if(/^Ignored: company unclear/.test(d))return "Skipped: couldn't tell which company";
+  return d;}
 async function saveClose(){
   const v=Math.round(+$('#closeDays').value);
   if(!(v>=0&&v<=365)){toast('Pick 0 to 365 days');return}
