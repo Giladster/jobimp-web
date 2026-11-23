@@ -310,7 +310,7 @@ async function startWatches(user, base) {
   if (process.env.GOOGLE_PUBSUB_TOPIC) {
     try {
       const w = await gapi(user, `${GM}/watch`, { method: 'POST', json: { topicName: process.env.GOOGLE_PUBSUB_TOPIC, labelIds: ['INBOX', 'SENT'], labelFilterBehavior: 'include' } });
-      await q(`update users set gmail_watch_exp=$2, gmail_history=coalesce(gmail_history,$3) where id=$1`, [user.id, +w.expiration, String(w.historyId)]);
+      await q(`update users set gmail_watch_exp=$2, gmail_history=coalesce(gmail_history,$3), watch_v=2 where id=$1`, [user.id, +w.expiration, String(w.historyId)]);
       out.gmail = true;
     } catch (e) { console.error('gmail watch failed', e.message); }
   }

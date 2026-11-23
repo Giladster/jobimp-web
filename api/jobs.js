@@ -67,6 +67,11 @@ module.exports = A.handle(async (req, res) => {
       return res.status(200).json({ log: rows, total: c[0].n });
     }
     try { await S.autoClose(user); } catch (e) { console.error('auto close failed', e.message); }
+    // Older Gmail pings covered the Inbox only: switch them to Inbox + Sent once.
+    if (user.refresh_enc && user.watch_v < 2) {
+      try { await S.startWatches(user, user.push_base || G.baseUrl(req)); } catch (e) { console.error('watch upgrade failed', e.message); }
+      await q('update users set watch_v=2 where id=$1', [user.id]); // try once; the daily renewal covers a failure
+    }
     const v = await version(user.id);
     if (req.query?.v && req.query.v === v) return res.status(200).json({ same: true, v });
     const { rows } = await q('select * from jobs where user_id=$1 and not removed order by updated_at desc, id', [user.id]);
