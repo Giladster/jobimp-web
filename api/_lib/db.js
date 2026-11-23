@@ -1,4 +1,5 @@
 // Database (Neon Postgres). DATABASE_URL comes from the Vercel + Neon connection.
+require('./env');
 require('pg').types.setTypeParser(1082, v => v); // dates stay 'YYYY-MM-DD'
 const { Pool } = require('pg');
 
