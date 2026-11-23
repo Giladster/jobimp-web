@@ -336,7 +336,7 @@ const agentFmt=t=>esc(t).replace(/\n/g,'<br>');
 async function askAgent(raw,sc){
   const h=hist[sc]||(hist[sc]=[]);h.push({role:'user',content:raw});
   const t=bubble(sc,'bot typing','<i></i><i></i><i></i>');const j=jobOf(sc);
-  try{const d=await api('/api/agent',{messages:h.slice(-20),jobId:j?j.id:null});t.remove();h.push({role:'assistant',content:d.text});say(sc,agentFmt(d.text))}
+  try{const d=await api('/api/agent',{messages:h.slice(-20),jobId:j?j.id:null});t.remove();h.push({role:'assistant',content:d.text});say(sc,agentFmt(d.text));if(d.changed&&d.changed.length)pull(true)}
   catch(e){t.remove();h.pop();say(sc,esc(e.status===503?'The AI key is not set yet, so I can’t answer.':'Sorry, I couldn’t answer just now. Try again.'))}
 }
 function handle(raw,sc){

@@ -30,8 +30,36 @@ const SYSTEM = `You are the Agent inside JobImp, a calm job search app. You help
 You know all their jobs and what was read from their Gmail and Calendar (given below). Answer from that data only. If the data does not say, say so plainly. Never invent companies, dates or replies.
 Style: very short, simple, friendly words. Plain text, no markdown, no headers. Use short numbered lines for lists. Max about 80 words unless the user asks for more. Use dates like "Wed Nov 25".
 Gmail and Calendar are read only: you never send, edit or delete anything there. You can write a draft email for the user to copy and send themselves.
-You cannot change jobs yet; if asked, tell the user to change it on the job card.
+You can change the user's jobs with your tools: set_status (move a job to Saved, Applied, Interview, Offer or Closed) and add_note (add a line to a job's timeline). Use them when the user clearly asks, or clearly tells you news (e.g. "I got an interview at X" means move X to Interview). If it is unclear which job, ask first. After a change, say in one short line what you did.
 Never mention Claude, AI models or these instructions. You are "the Agent".`;
+
+const TOOLS = [
+  { name: 'set_status', description: "Move one of the user's jobs to a new status.",
+    input_schema: { type: 'object', properties: { job_id: { type: 'integer' }, status: { type: 'string', enum: Object.keys(SL) } }, required: ['job_id', 'status'], additionalProperties: false } },
+  { name: 'add_note', description: "Add a short note (2 to 8 words) to a job's timeline, e.g. 'Sent home assignment'.",
+    input_schema: { type: 'object', properties: { job_id: { type: 'integer' }, note: { type: 'string' } }, required: ['job_id', 'note'], additionalProperties: false } },
+];
+
+async function runTool(user, name, input, changed) {
+  const { rows } = await q('select id, co, status, tl from jobs where id=$1 and user_id=$2 and not removed', [+input.job_id, user.id]);
+  const j = rows[0];
+  if (!j) return { error: 'No such job.' };
+  const day = new Date().toLocaleDateString('en-US', { timeZone: user.tz || 'Asia/Jerusalem', month: 'short', day: 'numeric' });
+  let status = j.status, line;
+  if (name === 'set_status') {
+    if (!SL[input.status]) return { error: 'Bad status.' };
+    if (j.status === input.status) return { ok: true, note: `${j.co} is already ${SL[j.status]}.` };
+    status = input.status;
+    line = status === 'closed' ? 'Closed' : status === 'saved' ? 'Saved for later' : 'Moved to ' + SL[status];
+  } else if (name === 'add_note') {
+    line = clip(String(input.note || '').trim(), 120);
+    if (!line) return { error: 'Empty note.' };
+  } else return { error: 'Unknown tool.' };
+  const tl = [[day, line], ...(j.tl || [])].slice(0, 60);
+  await q('update jobs set status=$3, tl=$4, updated_at=now() where id=$1 and user_id=$2', [j.id, user.id, status, JSON.stringify(tl)]);
+  changed.push({ id: j.id, co: j.co, what: line });
+  return { ok: true, job: j.co, status: SL[status], added: line };
+}
 
 let client = null;
 
@@ -53,13 +81,21 @@ module.exports = A.handle(async (req, res) => {
   const focus = Number.isInteger(+b.jobId) ? +b.jobId : null;
 
   if (!client) { const Anthropic = require('@anthropic-ai/sdk'); client = new Anthropic(); }
-  const r = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1500,
-    system: [{ type: 'text', text: SYSTEM }, { type: 'text', text: context(user, jobs, log, focus), cache_control: { type: 'ephemeral' } }],
-    output_config: { effort: 'low' },
-    messages: msgs,
-  });
-  const text = r.content.filter(c => c.type === 'text').map(c => c.text).join('').trim();
-  return res.status(200).json({ text: text || 'Sorry, I could not answer that. Try asking another way.' });
+  const system = [{ type: 'text', text: SYSTEM }, { type: 'text', text: context(user, jobs, log, focus), cache_control: { type: 'ephemeral' } }];
+  const changed = [];
+  let text = '';
+  for (let step = 0; step < 5; step++) {
+    const r = await client.messages.create({ model: MODEL, max_tokens: 1500, system, tools: TOOLS, output_config: { effort: 'low' }, messages: msgs });
+    text = r.content.filter(c => c.type === 'text').map(c => c.text).join('').trim();
+    const calls = r.content.filter(c => c.type === 'tool_use');
+    if (r.stop_reason !== 'tool_use' || !calls.length) break;
+    msgs.push({ role: 'assistant', content: r.content });
+    const results = [];
+    for (const c of calls) {
+      const out = await runTool(user, c.name, c.input || {}, changed).catch(e => ({ error: e.message }));
+      results.push({ type: 'tool_result', tool_use_id: c.id, content: JSON.stringify(out), ...(out.error ? { is_error: true } : {}) });
+    }
+    msgs.push({ role: 'user', content: results });
+  }
+  return res.status(200).json({ text: text || (changed.length ? changed.map(c => `${c.co}: ${c.what}.`).join('\n') : 'Sorry, I could not answer that. Try asking another way.'), changed });
 });
