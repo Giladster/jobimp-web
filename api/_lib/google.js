@@ -84,10 +84,21 @@ function bodyText(payload) {
   return (plain || stripHtml(html)).replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
 }
 
+// Files attached to an email (name, type, size, and the id to fetch it with).
+function attachmentsOf(payload) {
+  const out = [];
+  (function walk(p) {
+    if (!p) return;
+    if (p.filename && p.body?.attachmentId) out.push({ id: p.body.attachmentId, name: p.filename, type: p.mimeType || 'application/octet-stream', size: p.body.size || 0 });
+    (p.parts || []).forEach(walk);
+  })(payload);
+  return out;
+}
+
 async function getMessage(user, id) {
-  const m = await gapi(user, `${GM}/messages/${id}?format=full`);
+  const m = await gapi(user, `${GM}/messages/${encodeURIComponent(id)}?format=full`);
   const h = Object.fromEntries((m.payload?.headers || []).map(x => [x.name.toLowerCase(), x.value]));
-  return { id: m.id, threadId: m.threadId, labels: m.labelIds || [], at: new Date(+m.internalDate), from: h.from || '', to: h.to || '', subject: h.subject || '', snippet: m.snippet || '', text: bodyText(m.payload) };
+  return { id: m.id, threadId: m.threadId, labels: m.labelIds || [], at: new Date(+m.internalDate), from: h.from || '', to: h.to || '', cc: h.cc || '', subject: h.subject || '', snippet: m.snippet || '', text: bodyText(m.payload), files: attachmentsOf(m.payload) };
 }
 
 module.exports = { configured, baseUrl, authUrl, exchangeCode, accessToken, remember, gapi, getMessage, GM, CAL, encrypt };

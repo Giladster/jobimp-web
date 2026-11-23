@@ -3,7 +3,7 @@
 const { z } = require('zod');
 
 const MODEL = 'claude-opus-5-5';
-const KINDS = ['applied', 'invited', 'scheduled', 'assignment', 'rejected', 'offer', 'update', 'none'];
+const KINDS = ['applied', 'invited', 'scheduled', 'assignment', 'rejected', 'offer', 'update', 'submitted', 'followup', 'replied', 'none'];
 
 const Result = z.object({
   items: z.array(z.object({
@@ -24,8 +24,9 @@ For each item return:
 - company: the hiring company's short name. Work it out from the sender's email domain (e.g. shiraba@monday.com -> monday.com), the signature, the subject and the body. A recruiter's or interviewer's personal name is NEVER the company. Not the job board or applicant system either (not "Comeet", "Greenhouse", "LinkedIn", "Gmail"). If it matches a known company from the list, use exactly that name (e.g. "monday" or "Monday recruiting" -> "Monday.com" when that is on the list). Empty if you cannot tell.
 - role: the job title if stated, else "".
 - kind: applied (application received or sent) | invited (asked to interview or to book a time) | scheduled (an interview with a set time) | assignment (home task) | rejected | offer | update (other real progress) | none.
+  For items marked "sent by the user" (emails the user wrote): applied (the user applied by email) | submitted (the user sent a home assignment or requested files) | followup (the user followed up or asked about the process) | replied (the user answered the company, e.g. confirmed a time) | none. The company is the one the user wrote to.
 - interview_at: the interview start as local time "YYYY-MM-DDTHH:MM" if the item states a specific date and time, else null.
-- note: what happened, in English, 2 to 6 words, starting with a capital letter, e.g. "Invited to interview", "Rejected by email", "Home assignment", "Applied", "Interview set". No company name.
+- note: what happened, in English, 2 to 6 words, starting with a capital letter, e.g. "Invited to interview", "Rejected by email", "Home assignment", "Applied", "Interview set". For sent emails start with "You", e.g. "You sent the home assignment", "You followed up", "You confirmed the time". No company name.
 - why: one short, plain sentence a non-technical user understands, naming the clue you used. E.g. "The invite came from scaleops.com and sets an interview time." or "A Google Docs share request, not about a job." No jargon. Never mention Claude, AI or yourself.
 Return one entry per input item, with the same i.`;
 
@@ -35,7 +36,7 @@ function render(items, known) {
   return `Known companies: ${known.length ? known.join(', ') : '(none yet)'}\n\n` + items.map(x =>
     x.type === 'calendar'
       ? `<item i="${x.i}" type="calendar event">\nTitle: ${x.subject}\nStarts (local): ${x.start}\nOrganizer: ${x.from}\nDescription: ${clip(x.text, 1500)}\n</item>`
-      : `<item i="${x.i}" type="email">\nDate: ${x.date}\nFrom: ${x.from}\nSubject: ${x.subject}\nBody:\n${clip(x.text, 3000)}\n</item>`
+      : `<item i="${x.i}" type="${x.sent ? 'email sent by the user' : 'email'}">\nDate: ${x.date}\nFrom: ${x.from}\nTo: ${x.to || ''}\nSubject: ${x.subject}${x.files ? `\nAttachments: ${x.files}` : ''}\nBody:\n${clip(x.text, 3000)}\n</item>`
   ).join('\n\n');
 }
 

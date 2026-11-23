@@ -350,6 +350,20 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .coll>div{overflow:hidden;min-height:0}
 .coll:not(.open){transition:grid-template-rows .28s cubic-bezier(.4,0,.2,1),opacity .2s ease,visibility 0s .28s}
 #logBody{overflow:hidden}
+/* timeline step -> email */
+.ve.tap,.tl .row.tap{cursor:pointer;border-radius:8px}
+.ve.tap:hover .vx,.tl .row.tap:hover .x{color:var(--accent)}
+.clip{display:inline-flex;vertical-align:-2px;margin-left:6px;color:var(--faint)}
+.clip svg.i,.fchip svg.i{width:13px;height:13px}
+.mail .t1{font-size:17px}
+.mail .t3{margin-top:4px}
+.files{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 4px}
+.fchip{display:inline-flex;align-items:center;gap:7px;max-width:100%;padding:8px 12px;border-radius:10px;background:var(--surface);color:var(--ink);font-size:13.8px;text-decoration:none}
+.fchip:hover{background:var(--surface2)}
+.fchip .fn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px}
+.fchip .fs{color:var(--faint);font-size:12.6px}
+.mtext{white-space:pre-wrap;word-break:break-word;font-size:14.4px;line-height:1.55;color:var(--muted);margin:16px 0 18px;padding-top:14px;border-top:1px solid var(--line)}
+.mail .link{display:inline-block;margin-right:16px;font-size:14px;text-decoration:none}
 /* edit job, closed reason */
 .why-c{color:var(--muted)}
 .why-c.bad{color:var(--s-closed)}
