@@ -166,7 +166,7 @@ async function classifyAndApply(user, items) {
       }
     }
     logs.push([r.src, r.date, String(r.from || '').slice(0, 200), String(r.subject || '').slice(0, 300),
-      JSON.stringify({ did, company: r.company || '', role: r.role || '', kind: r.kind || 'none', note: r.note || '', why: r.why || '' })]);
+      JSON.stringify({ did, company: r.company || '', role: r.role || '', kind: r.kind || 'none', note: r.note || '', why: r.why || '', id: r.extId || '' })]);
   }
   await writeLog(user, logs);
   return n;

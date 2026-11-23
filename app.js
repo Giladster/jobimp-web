@@ -35,7 +35,7 @@ function toast(t,undo){const el=$('#toast');el.innerHTML=esc(t)+(undo?' <button 
 
 /* navigation */
 function show(v,keepScope){
-  view=v;closeModal();if(v==='settings'){LOGST.open=false;LOGST.rows=null}
+  view=v;closeModal();if(v==='settings'){LOGST.open=false;LOGST.rows=null;ALOG.open=false;ALOG.rows=null}
   document.querySelectorAll('.nv').forEach(b=>b.classList.toggle('on',b.dataset.v===(v==='job'?'jobs':v)));
   $('#main').scrollTop=0;
   if(!keepScope)setScope(v==='job'?'j'+curJob.id:'main');
@@ -334,16 +334,45 @@ $('#atoggle').onclick=()=>openAgentMobile(true);
 function findCo(t){const all=[...new Set([...jobs.map(j=>j.co),...alerts.map(a=>a.co)])];return all.find(c=>t.includes(c.toLowerCase().split(/[ .]/)[0]))}
 function statusIn(t){if(/reject|closed|delete/.test(t))return'closed';if(/reopen/.test(t))return'saved';if(/accept|offer/.test(t))return'offer';if(/interview/.test(t)&&/(move|mark|to )/.test(t))return'interview';if(/applied/.test(t)&&/(mark|move|i applied|to applied)/.test(t))return'applied';return null}
 const hist={},plans={};let planN=0,AMODE=null;
-const agentFmt=t=>esc(t).replace(/\n/g,'<br>');
+const agentFmt=t=>esc(t).replace(/\[([^\]\n]{1,90})\]\(((?:job|step|mail|event):[\w:.\-]+|https?:\/\/[^\s)]+)\)/g,(m,txt,u)=>/^https?:/.test(u)
+    ?`<a class="alink" href="${u.replace(/&amp;/g,'&').replace(/"/g,'%22')}" target="_blank" rel="noopener">${txt}</a>`
+    :`<a class="alink" href="#" data-alink="${u}">${txt}</a>`).replace(/\n/g,'<br>');
+// Agent links: open the job, a step's email, an email or an event. The chat stays as it is.
+async function openALink(u){
+  const [k,a,b]=u.split(':');
+  if(k==='job'){const j=jobs.find(x=>x.id===+a);if(!j){toast('That job is not in My jobs.');return}curJob=j;show('job',true);if(matchMedia('(max-width:1240px)').matches)openAgentMobile(false);return}
+  if(k==='step'){const j=jobs.find(x=>x.id===+a),t0=j&&(j.tl0||j.tl)[+b];if(!t0){toast('Could not find that step.');return}openStep(j,null,t0);return}
+  openModal(k==='event'?'Calendar event':'Email','<div class="t2 logpad">Opening…</div>');
+  try{if(k==='event'){const {event:e}=await api('/api/jobs?event='+encodeURIComponent(a));$('#mBody').innerHTML=eventHtml(e)}
+    else{const {mail,account}=await api('/api/jobs?mail='+encodeURIComponent(a));$('#mBody').innerHTML=mailHtml(mail,account)}}
+  catch(x){$('#mBody').innerHTML=`<div class="t2 logpad">${esc(x.message||'Could not open it.')}</div>`}
+}
+/* Show the Agent's changes: a soft blink if you can see them, else a small pop-up at the bottom left. */
+const popOn=()=>store.get('jobimp-agent-pop')!=='off';
+function showChanges(list){
+  list=(list||[]).filter(c=>c&&c.text);if(!list.length)return;
+  const unseen=[];
+  for(const c of list){
+    const els=c.job?[...document.querySelectorAll(`#page [data-open="${c.job}"]`)]:[];
+    if(c.job&&view==='job'&&curJob?.id===c.job){const h=$('#page .dh')||$('#page');if(h)els.push(h)}
+    if(els.length)els.forEach(el=>{el.classList.remove('aflash');void el.offsetWidth;el.classList.add('aflash')});else unseen.push(c);
+  }
+  if(!unseen.length||!popOn())return;
+  const box=$('#apop');box.innerHTML=`<div class="t3">Agent</div>`+unseen.slice(0,4).map(c=>`<div class="apr"><span>${esc(c.text)}</span>${c.job&&jobs.some(j=>j.id===c.job)?`<a href="#" class="alink" data-alink="job:${c.job}">View</a>`:''}</div>`).join('');
+  box.classList.remove('in','out');void box.offsetWidth;box.classList.add('in');
+  clearTimeout(showChanges.t);const hide=()=>{showChanges.t=setTimeout(()=>{box.classList.add('out');box.classList.remove('in')},1300)};
+  box.onmouseenter=()=>clearTimeout(showChanges.t);box.onmouseleave=hide;hide();
+}
+async function afterChange(d){if(!d.changed)return;await pull(true);setTimeout(()=>showChanges(d.changes),60)}
 const amode=()=>AMODE||(AMODE=store.get('jobimp-agent-mode')==='auto'?'auto':'plan');
 function undoBtn(id){return id?`<div class="acts"><button class="act" data-aundo="${id}">Undo</button></div>`:''}
 async function askAgent(raw,sc){
   const h=hist[sc]||(hist[sc]=[]);h.push({role:'user',content:raw});
   const t=bubble(sc,'bot typing','<i></i><i></i><i></i>');const j=jobOf(sc);
   try{const d=await api('/api/agent',{messages:h.slice(-20),jobId:j?j.id:null,mode:amode()});t.remove();h.push({role:'assistant',content:d.text});
-    if(d.plan){const k=++planN;plans[k]={calls:d.plan,sc};say(sc,agentFmt(d.text),null,`<div class="acts"><button class="act pri" data-aplan="${k}">Do it</button><button class="act" data-acancel="${k}">Cancel</button></div>`)}
+    if(d.plan){const k=++planN;plans[k]={calls:d.plan,sc,ask:raw};say(sc,agentFmt(d.text),null,`<div class="acts"><button class="act pri" data-aplan="${k}">Do it</button><button class="act" data-acancel="${k}">Cancel</button></div>`)}
     else say(sc,agentFmt(d.text),null,undoBtn(d.undoId));
-    if(d.changed)pull(true)}
+    afterChange(d)}
   catch(e){t.remove();h.pop();say(sc,esc(e.status===503?'The AI key is not set yet, so I can’t answer.':'Sorry, I couldn’t answer just now. Try again.'))}
 }
 document.addEventListener('click',async e=>{
@@ -351,11 +380,12 @@ document.addEventListener('click',async e=>{
   if(p){const k=p.dataset.aplan||p.dataset.acancel,pl=plans[k];if(!pl)return;delete plans[k];p.parentElement.remove();const h=hist[pl.sc]||(hist[pl.sc]=[]);
     if(p.dataset.acancel){h.push({role:'user',content:'Cancel that plan.'},{role:'assistant',content:'OK, I changed nothing.'});say(pl.sc,'OK, I changed nothing.');return}
     const t=bubble(pl.sc,'bot typing','<i></i><i></i><i></i>');
-    try{const d=await api('/api/agent',{op:'apply',calls:pl.calls});t.remove();h.push({role:'user',content:'Do it.'},{role:'assistant',content:d.text});say(pl.sc,agentFmt(d.text),null,undoBtn(d.undoId));if(d.changed)pull(true)}
+    try{const d=await api('/api/agent',{op:'apply',calls:pl.calls,ask:pl.ask});t.remove();h.push({role:'user',content:'Do it.'},{role:'assistant',content:d.text});say(pl.sc,agentFmt(d.text),null,undoBtn(d.undoId));afterChange(d)}
     catch(x){t.remove();say(pl.sc,esc(x.message||'Could not do it. Try again.'))}}
   if(u){const id=u.dataset.aundo;u.parentElement.remove();const sc=scope;
-    try{await api('/api/agent',{op:'undo',id});(hist[sc]||(hist[sc]=[])).push({role:'user',content:'Undo that.'},{role:'assistant',content:'Undone.'});say(sc,'Undone.');pull(true)}
+    try{const d=await api('/api/agent',{op:'undo',id});(hist[sc]||(hist[sc]=[])).push({role:'user',content:'Undo that.'},{role:'assistant',content:'Undone.'});say(sc,'Undone.');afterChange(d)}
     catch(x){say(sc,esc(x.status===409?'That was already undone.':'Could not undo. Try again.'))}}
+  const al=e.target.closest('[data-alink]');if(al){e.preventDefault();openALink(al.dataset.alink);return}
   const m=e.target.closest('[data-amode]');if(m){AMODE=amode()==='plan'?'auto':'plan';store.set('jobimp-agent-mode',AMODE);renderABar();toast(AMODE==='plan'?'Ask first: I’ll show my plan before I change anything':'Auto: I’ll just do what you ask')}
 });
 function handle(raw,sc){
@@ -625,13 +655,13 @@ const stepTap=(x,m)=>REAL&&(m?.id||!/^(Moved to |Closed|Saved for later|Added |I
 const fsize=n=>n>=1e6?(n/1e6).toFixed(1)+' MB':n>=1e3?Math.round(n/1e3)+' KB':n?n+' B':'';
 const fmtWhen=t=>{const d=new Date(t);return isNaN(d)?'':d.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 const nameOf=s=>String(s||'').replace(/\s*<[^>]*>/g,'').replace(/"/g,'').trim()||String(s||'');
-async function openStep(j,k){
-  const t=j?.tl[k];if(!t)return;
+async function openStep(j,k,raw){
+  const t=raw||j?.tl[k];if(!t)return;
   openModal(esc(t[1]),`<div class="t2 logpad">Opening…</div>`);
   try{
     let m=t[2];
     if(!m?.id){
-      const t0=j.tl0?.[k]||t; // the saved step (its text can differ on screen, e.g. "(done)")
+      const t0=raw||j.tl0?.[k]||t; // the saved step (its text can differ on screen, e.g. "(done)")
       const r=await api('/api/jobs',{op:'findmail',id:j.id,label:t0[0],text:t0[1]});m=r.meta;
       if(!m){$('#mBody').innerHTML=`<div class="t2 logpad">No email found for ${esc(j.co)} on ${esc(t[0])}.</div>`;return}
       t[2]=m;t0[2]=m;
@@ -667,6 +697,12 @@ function renderSettings(){
     <div class="lbl" style="margin-top:0">Auto-close</div>
     <div class="setrow">Move a job to Closed after <input id="closeDays" type="number" min="0" max="365" value="${d}"> days with no news.<button class="pbtn" id="saveClose">Save</button></div>
     <div class="foot" style="margin-top:6px">Counts from the last email, interview or move. 0 means never.</div>
+    ${REAL?`<div class="lbl">Agent</div>
+      <div class="logh"><div class="t2">Show a small pop-up when the Agent changes something on another page.</div>
+      <button class="tgl${popOn()?' on':''}" id="popTog" role="switch" aria-checked="${popOn()}" aria-label="Agent pop-ups"><i></i></button></div>
+      <div class="logh"><div class="t2">Agent log: everything the Agent changed for you.</div>
+      <button class="pbtn sm" id="alogTog" aria-expanded="${ALOG.open}">${ALOG.open?'Hide log':'Show log'}</button></div>
+      <div class="coll${ALOG.open?' open':''}" id="alogColl"><div><div id="alogBody">${alogHtml()}</div></div></div>`:''}
     ${REAL?`<div class="lbl">Email log</div>
       <div class="logh"><div class="t2">What the Agent read in your email, what it changed in your jobs, and why. Nothing is changed in Gmail.</div>
       <button class="pbtn sm" id="logTog" aria-expanded="${LOGST.open}">${LOGST.open?'Hide log':'Show log'}</button></div>
@@ -677,11 +713,33 @@ function renderSettings(){
       ${SETTINGS.backup?`<button class="link" id="restore" style="font-size:13.8px">Bring back my previous list</button>`:''}`:''}`:''}`;
   $('#saveClose').onclick=saveClose;
   if(REAL)$('#logTog').onclick=toggleLog;
+  if(REAL){$('#alogTog').onclick=toggleALog;$('#popTog').onclick=e=>{const on=!popOn();store.set('jobimp-agent-pop',on?'on':'off');e.currentTarget.classList.toggle('on',on);e.currentTarget.setAttribute('aria-checked',on);toast(on?'Pop-ups on':'Pop-ups off')}}
   const rr=$('#reread');if(rr)rr.onclick=()=>{
     openModal('Re-read all Gmail?',`<div class="t2" style="margin-bottom:18px">My jobs will be rebuilt from your Gmail and Calendar (last 6 months). Edits and moves you made by hand will be replaced. Your current list is saved, and you can bring it back here.</div><button class="pbtn pri" id="rrGo">Yes, re-read</button>`);
     $('#rrGo').onclick=async()=>{try{$('#rrGo').disabled=true;await api('/api/jobs',{op:'rebuild'});closeModal();LOGST.rows=null;await pull(true);toast('Reading your Gmail again…');runImport()}catch(x){toast(x.message||'Could not start.')}}};
   const rs=$('#restore');if(rs)rs.onclick=async()=>{try{await api('/api/jobs',{op:'restore'});await pull(true);toast('Your previous list is back')}catch(x){toast(x.message||'Could not bring it back.')}};
 }
+/* Agent log: every change the Agent made, newest first, with Undo */
+const ALOG={open:false,rows:null,total:0,page:0};
+function alogHtml(){
+  const L=ALOG;if(L.rows===null)return '<div class="t2 logpad">Loading…</div>';
+  if(!L.rows.length)return '<div class="t2 logpad">The Agent hasn’t changed anything yet.</div>';
+  const rows=L.rows.map(r=>`<div class="logr"><div class="t3">${esc(fmtWhen(r.at))}${r.undone&&r.can_undo?' · Undone':''}</div>
+    ${r.ask?`<div class="why"><b>You asked:</b> ${esc(r.ask)}</div>`:''}
+    ${(r.items||[{text:r.label}]).map(i=>`<div class="did${r.undone&&r.can_undo?' off':''}">${esc(i.text)}${i.job&&jobs.some(j=>j.id===i.job)?` <a href="#" class="alink" data-alink="job:${i.job}">View</a>`:''}</div>`).join('')}
+    ${r.can_undo&&!r.undone?`<button class="link" data-alundo="${r.id}" style="font-size:13.6px;margin-top:4px">Undo</button>`:''}</div>`).join('');
+  const from=L.page*15+1,to=Math.min(L.total,from+L.rows.length-1);
+  return rows+(L.total>15?`<div class="logf"><button class="link" data-alg="newer"${L.page?'':' disabled'}>Newer</button><span>${from}–${to} of ${L.total}</span><button class="link" data-alg="older"${to<L.total?'':' disabled'}>Older</button></div>`:'');
+}
+async function loadALog(){try{const r=await api('/api/agent',{op:'log',limit:15,offset:ALOG.page*15});ALOG.rows=r.log||[];ALOG.total=r.total||0}catch{ALOG.rows=[];ALOG.total=0}}
+function swapALog(){const box=$('#alogBody');if(!box)return;const h0=box.offsetHeight;box.innerHTML=alogHtml();const h1=box.offsetHeight;
+  if(h0!==h1&&$('#alogColl').classList.contains('open')&&box.animate)box.animate([{height:h0+'px'},{height:h1+'px'}],{duration:300,easing:'cubic-bezier(.2,.7,.2,1)'})}
+async function toggleALog(){const L=ALOG,c=$('#alogColl'),b=$('#alogTog');L.open=!L.open;b.textContent=L.open?'Hide log':'Show log';b.setAttribute('aria-expanded',L.open);
+  if(L.open){L.page=0;L.rows=null;$('#alogBody').innerHTML=alogHtml();c.classList.add('open');await loadALog();if(L.open)swapALog()}else c.classList.remove('open')}
+document.addEventListener('click',async e=>{
+  const g=e.target.closest('[data-alg]');if(g&&!g.disabled){ALOG.page=g.dataset.alg==='older'?ALOG.page+1:Math.max(0,ALOG.page-1);await loadALog();swapALog();return}
+  const u=e.target.closest('[data-alundo]');if(u){u.disabled=true;try{const d=await api('/api/agent',{op:'undo',id:u.dataset.alundo});toast('Undone');await afterChange(d);await loadALog();swapALog()}catch(x){toast(x.status===409?'Already undone':'Could not undo.');u.disabled=false}}
+});
 /* email log: closed by default; open shows the last 5, "Show more" shows 15 per page with Older / Newer */
 const LOGST={open:false,mode:'peek',page:0,rows:null,total:0};
 const LOG_PAGE=15,LOG_PEEK=5;
