@@ -751,7 +751,7 @@ function notifList(){
   jobs.forEach(j=>(j.tl0||j.tl).forEach(t=>{
     const m=t[2]||{};if(m.s!=='gmail'&&m.s!=='calendar')return;if(/\(coming up\)|reminder/i.test(t[1]))return;
     const d=stepDay(t[0]);if(!d||d>TODAY||TODAY-d>14*DAY)return;
-    const text=`${j.co}: ${t[1]}`;out.push({kind:'note',key:`n:${j.id}:${t[0]}:${t[1]}`,text,d,link:'job:'+j.id,sub:`${t[0]} · ${m.s==='calendar'?'Calendar':'Gmail'}`,bad:/reject|turned down|not moving/i.test(t[1])});
+    const text=`${j.co}: ${t[1]}`;out.push({kind:'note',key:`n:${j.id}:${t[0]}:${t[1]}`,text,d,link:'job:'+j.id,sub:`${t[0]} · ${m.s==='calendar'?'Calendar':'Gmail'}`,bad:REJECT.test(t[1])});
   }));
   return out.sort((a,b)=>b.d-a.d).slice(0,10);
 }
