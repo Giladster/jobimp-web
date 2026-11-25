@@ -48,6 +48,9 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6;stro
 .arail .spark{cursor:pointer}
 @media (min-width:1241px){.app.rcol .agent>:not(.arail){display:none!important}
 .app.rcol .arail{display:flex;animation:fadeIn .3s ease both}}
+.tip{position:fixed;z-index:120;max-width:260px;background:#000;color:var(--ink);font-size:12.6px;line-height:1.35;padding:6px 10px;border-radius:8px;box-shadow:0 0 0 1px var(--line),0 8px 24px -8px rgba(0,0,0,.8);pointer-events:none;opacity:0;transform:translateY(-2px);transition:opacity .14s ease,transform .14s ease}
+.tip.on{opacity:1;transform:none;transition-delay:.12s}
+@media (hover:none){.tip{display:none}}
 .aicons{display:flex;gap:2px;align-items:center}
 
 /* sidebar */
@@ -518,8 +521,8 @@ button.sd.on:not(.cur) .d{outline:2px solid rgba(237,237,239,.6);outline-offset:
     <div class="sugg" id="sugg"></div>
     <form class="composer" id="composer">
       <input id="inp" placeholder="Ask or tell me anything" autocomplete="off" aria-label="Message the agent">
-      <button type="button" class="micb" id="mic" aria-label="Speak"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
-      <button class="sendb" aria-label="Send"><svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+      <button type="button" class="micb" id="mic" aria-label="Speak" data-tip="Talk to the Agent"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <button class="sendb" aria-label="Send" data-tip="Send"><svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
     </form>
   </aside>
 </div>

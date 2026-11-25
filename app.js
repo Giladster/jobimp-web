@@ -462,11 +462,24 @@ function intro(sc){
    :REAL?`I read your Gmail and calendar to track your jobs. Read only: I never send, edit or delete anything.`:`I watch your search all day. Ask anything, or tell me what to do. I always ask before I send anything.`);
 }
 function setScope(sc){scope=sc;const box=$('#threadBox');box.innerHTML='';box.appendChild(thread(sc));thread(sc).scrollTop=1e5;$('#composer').dataset.scope=sc;renderABar();renderSugg()}
-function modePill(){return REAL?`<button class="amode" data-amode title="Change how the Agent acts">${amode()==='plan'?'Ask first':'Auto'}</button>`:''}
+function modePill(){return REAL?`<button class="amode" data-amode data-tip="${amode()==='plan'?'Ask first: the Agent shows its plan before changing anything. Click for Auto':'Auto: the Agent just does what you ask. Click for Ask first'}">${amode()==='plan'?'Ask first':'Auto'}</button>`:''}
 function aIcons(){return `<div class="aicons"><button class="colb" data-aclear title="Clear chat" aria-label="Clear chat"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg></button><button class="colb" id="rTog" data-rtog title="Collapse the Agent" aria-label="Collapse the Agent"><svg class="i" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>`}
+/* hover labels: a small dark note that fades in over icon buttons */
+const tipEl=document.createElement('div');tipEl.className='tip';document.body.appendChild(tipEl);let tipFor=null;
+document.addEventListener('mouseover',e=>{
+  const el=e.target.closest('[data-tip],button[title],a[title]');if(!el){if(tipFor){tipEl.classList.remove('on');tipFor=null}return}
+  if(el===tipFor)return;
+  if(el.title){el.dataset.tip=el.title;el.removeAttribute('title')}
+  const r=el.getBoundingClientRect();tipFor=el;tipEl.textContent=el.dataset.tip;tipEl.classList.remove('on');tipEl.style.left='0px';tipEl.style.top='0px';
+  const w=tipEl.offsetWidth,h=tipEl.offsetHeight;let x=r.left+r.width/2-w/2,y=r.bottom+8;
+  if(y+h>innerHeight-8)y=r.top-h-8;x=Math.max(8,Math.min(innerWidth-w-8,x));
+  if(el.closest('.side')&&$('.app').classList.contains('lcol')){x=r.right+10;y=r.top+r.height/2-h/2}
+  tipEl.style.left=x+'px';tipEl.style.top=y+'px';requestAnimationFrame(()=>tipEl.classList.add('on'));
+});
+document.addEventListener('mousedown',()=>{tipEl.classList.remove('on');tipFor=null});
 /* collapse / expand the left menu and the Agent (remembered) */
 function setCol(side,on){$('.app').classList.toggle(side==='l'?'lcol':'rcol',on);store.set('jobimp-col-'+side,on?'1':'');
-  if(side==='l'){const b=$('#lTog');b.title=b.ariaLabel=on?'Expand menu':'Collapse menu';document.querySelectorAll('#nav .nv').forEach(n=>{if(on)n.title=n.textContent.replace(/\d+$/,'').trim();else n.removeAttribute('title')})}}
+  if(side==='l'){const b=$('#lTog');b.dataset.tip=b.ariaLabel=on?'Expand menu':'Collapse menu';b.removeAttribute('title');document.querySelectorAll('#nav .nv').forEach(n=>{if(on)n.dataset.tip=n.textContent.replace(/\d+$/,'').trim();else delete n.dataset.tip})}}
 function clearChat(sc){
   openModal('Clear chat?','<div class="t2" style="margin-bottom:18px">This clears the messages in this chat. Your jobs and the Agent log stay as they are.</div><button class="pbtn pri" id="clrGo">Clear</button>');
   $('#clrGo').onclick=()=>{closeModal();const t=threads[sc];if(t){t.innerHTML='';intro(sc)}hist[sc]=[];for(const k in plans)if(plans[k].sc===sc)delete plans[k];toast('Chat cleared')}}

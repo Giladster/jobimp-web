@@ -78,7 +78,7 @@ async function applyEvent(user, ev, jobs) {
   if (!has(lab, note)) tl.unshift([lab, note, meta]);
   let status = j.status, applied = j.applied, firstReply = j.first_reply, next = j.next_raw;
   // An email from before the job was closed does not reopen it (e.g. when Gmail is read again).
-  const closedAt = Math.max(0, ...(j.tl || []).filter(e => /^Closed\b/.test(String(e[1]))).map(e => labelDate(e[0], now)));
+  const closedAt = Math.max(0, ...(j.tl || []).filter(e => ENDS.test(String(e[1]))).map(e => labelDate(e[0], now)));
   const oldNews = j.status === 'closed' && closedAt && Date.UTC(...day.split('-').map((v, k) => k === 1 ? v - 1 : +v)) <= closedAt;
   if (ev.kind === 'rejected') { status = 'closed'; next = null; tl = tl.filter(notUpcoming); }
   else if (oldNews) { /* stays closed */ }
@@ -100,6 +100,9 @@ async function applyEvent(user, ev, jobs) {
 }
 
 /* ---------- auto-close: no news for X days (user setting) -> Closed ---------- */
+// Steps that end a process: the app's own "Closed" note, or a rejection.
+const ENDS = /^Closed\b|reject|turned (you )?down|not moving forward/i;
+
 async function autoClose(user) {
   const days = +user.close_days; if (!(days > 0)) return 0;
   const tz = user.tz || 'Asia/Jerusalem', now = new Date();
@@ -109,7 +112,13 @@ async function autoClose(user) {
   for (const j of rows) {
     const tl = Array.isArray(j.tl) ? j.tl : [];
     // Count from the latest real news. The app's own "Closed" steps are not news.
-    const dates = tl.filter(e => !/^Closed\b/.test(String(e[1]))).map(e => labelDate(e[0], now)).filter(Boolean);
+    const real = tl.filter(e => !/^Closed\b/.test(String(e[1])));
+    // The latest news is a rejection (e.g. older emails were read after it): the process is over.
+    const newest = real.map(e => [labelDate(e[0], now), e]).filter(x => x[0]).sort((a, b) => b[0] - a[0])[0];
+    if (newest && ENDS.test(String(newest[1][1]))) {
+      await q(`update jobs set status='closed', next_raw=null, updated_at=now() where id=$1`, [j.id]); n++; continue;
+    }
+    const dates = real.map(e => labelDate(e[0], now)).filter(Boolean);
     if (dates.some(d => d > today)) continue; // an interview is still ahead
     if (j.next_raw) { const m = /^\w{3} ([A-Z][a-z]{2} \d{1,2})/.exec(j.next_raw); if (m && labelDate(m[1], now) >= today) continue; }
     [j.applied, j.first_reply].forEach(d => { if (d) dates.push(Date.UTC(...String(d).slice(0, 10).split('-').map((v, k) => k === 1 ? v - 1 : +v))); });
