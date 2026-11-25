@@ -207,7 +207,7 @@ function jobSteps(j){
     else{cur={s,start:e.d,end:e.d,items:[e],days:new Set(n?[+e.d]:[])};g.push(cur)}
   }
   if(g.length)g[0].items.unshift(...pre);
-  g.forEach(x=>{const n=Math.max(1,x.days.size);x.name=STEPL[x.s]+(n>1?' ×'+n:'');x.fut=x.start>TODAY;
+  g.forEach(x=>{x.name=STEPL[x.s];x.fut=x.start>TODAY;
     x.date=+x.start===+x.end?dlab(x.start):dlab(x.start)+' – '+dlab(x.end)});
   return g;
 }
@@ -244,11 +244,21 @@ function editStep(j,k){
   $('#spSave').onclick=()=>{tl[k]=readStep(t);sortTl(j);if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Saved')};
   $('#spDel').onclick=()=>{tl.splice(k,1);if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Step removed')};
 }
-// Board "by step": dropping a card on a step column records that step for today.
+// Board "by step": dragging a card moves the job to that step today ("Moved to X by you").
+// Dragging it back removes that move. Only the last move of a day is kept.
+const isMove=t=>t[2]?.s==='you'&&/^(Moved to .+ by you|.+ \(set by you\))$/.test(String(t[1]));
+function stepBefore(tl,t){const d=tlDate(t[0]);const g=jobSteps({tl:tl.filter(x=>x!==t)});let s=null;g.forEach(x=>{if(x.start<=d)s=x.s});return s}
+function normalizeMoves(j){
+  const tl=j.tl0||j.tl;let changed=false;const seen=new Set();
+  for(let k=0;k<tl.length;k++){const t=tl[k];if(!isMove(t))continue;if(seen.has(t[0])){tl.splice(k--,1);changed=true}else seen.add(t[0])}
+  for(let k=tl.length-1;k>=0;k--){const t=tl[k];if(isMove(t)&&stepBefore(tl,t)===t[2].t){tl.splice(k,1);changed=true}}
+  return changed;
+}
 function setStep(j,s){
-  if(curStep(j)===s)return;
-  const e=[dlab(TODAY),STEPL[s]+' (set by you)',{s:'you',id:'',t:s}];
-  j.tl0=j.tl0||j.tl;j.tl0.unshift(e);if(!REAL)j.tl=j.tl0;
+  const today=dlab(TODAY);j.tl0=j.tl0||j.tl;
+  j.tl0=j.tl0.filter(t=>!(isMove(t)&&t[0]===today));
+  if(stepBefore(j.tl0,[today,'',{}])!==s)j.tl0.unshift([today,`Moved to ${STEPL[s]} by you`,{s:'you',id:'',t:s}]);
+  if(!REAL)j.tl=j.tl0;
   if(j.status!=='offer'||s==='offer')j.status=s==='offer'?'offer':'interview';
   refreshTime();saveJob(j);render();toast(`${j.co} moved to ${STEPL[s]}`);
 }
@@ -684,6 +694,7 @@ function loadReal(data){
   const r=jobs.filter(j=>j.replied!=null).map(j=>j.replied).sort((a,b)=>a-b);
   const q=f=>r.length?r[Math.min(r.length-1,Math.floor(f*r.length))]:7;
   const band=[q(.25),median(r)??7,q(.75)];REPLY={};jobs.forEach(j=>REPLY[j.co]=band);
+  jobs.forEach(j=>{if(normalizeMoves(j)){j.tl=j.tl0.map(t=>[...t]);saveJob(j)}});
   if(!jobs.some(j=>j.status===jobTab))jobTab=jobs.some(j=>j.status==='interview')?'interview':'applied';migrateLocal();refreshTime();
 }
 function loadDemo(){REAL=false;jobs=DEMO_JOBS.map(j=>({...j,tl:[...j.tl]}));alerts=DEMO_ALERTS.map(a=>({...a}));recordings=[...DEMO_RECS];REPLY=DEMO_REPLY;jobTab='applied';applyHidden();applyMoves()}
