@@ -48,6 +48,24 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6;stro
 .arail .spark{cursor:pointer}
 @media (min-width:1241px){.app.rcol .agent>:not(.arail){display:none!important}
 .app.rcol .arail{display:flex;animation:fadeIn .3s ease both}}
+.lblrow{display:flex;align-items:baseline;justify-content:space-between}
+.lblrow .clrall{font-size:13.2px;color:var(--faint)}
+.lblrow .clrall:hover{color:var(--ink)}
+.histl{float:right;font-size:13.8px;color:var(--faint)}
+.histl:hover{color:var(--ink)}
+.rowx{position:relative;overflow:hidden}
+.rowx .row{padding-right:64px}
+.rowx.bad .t1{color:var(--s-closed)}
+.xclr{position:absolute;right:30px;top:50%;transform:translateY(-50%);width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:var(--faint);opacity:0;transition:opacity .18s,color .18s,background .18s}
+.xclr svg.i{width:14px;height:14px}
+.rowx:hover .xclr,.xclr:focus-visible{opacity:1}
+.xclr:hover{color:var(--ink);background:var(--surface2)}
+@media (hover:none){.xclr{opacity:1}}
+.empty.sm{padding:18px 0;text-align:left}
+.hrow2{display:flex;align-items:center;gap:14px;padding:13px 10px;margin:0 -10px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:8px;transition:background .15s}
+.hrow2:hover{background:var(--surface)}
+.hrow2.off .t1{color:var(--muted)}
+.hrow2 .txt{flex:1;min-width:0}
 .tip{position:fixed;z-index:120;max-width:260px;background:#000;color:var(--ink);font-size:12.6px;line-height:1.35;padding:6px 10px;border-radius:8px;box-shadow:0 0 0 1px var(--line),0 8px 24px -8px rgba(0,0,0,.8);pointer-events:none;opacity:0;transform:translateY(-2px);transition:opacity .14s ease,transform .14s ease}
 .tip.on{opacity:1;transform:none;transition-delay:.12s}
 @media (hover:none){.tip{display:none}}

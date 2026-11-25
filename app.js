@@ -36,14 +36,14 @@ function toast(t,undo){const el=$('#toast');el.innerHTML=esc(t)+(undo?' <button 
 /* navigation */
 function show(v,keepScope){
   view=v;closeModal();if(v==='settings'){LOGST.open=false;LOGST.rows=null;ALOG.open=false;ALOG.rows=null}
-  document.querySelectorAll('.nv').forEach(b=>b.classList.toggle('on',b.dataset.v===(v==='job'?'jobs':v)));
+  document.querySelectorAll('.nv').forEach(b=>b.classList.toggle('on',b.dataset.v===(v==='job'?'jobs':v==='history'?'today':v)));
   $('#main').scrollTop=0;
   if(!keepScope)setScope(v==='job'?'j'+curJob.id:'main');
   render(true);
 }
 function render(anim){
   const p=$('#page');p.classList.toggle('wide',view==='jobs'&&jobsMode==='board');
-  ({today:renderToday,alerts:renderAlerts,jobs:renderJobs,job:renderJob,interview:renderInterview,stats:renderStats,settings:renderSettings})[view]();
+  ({today:renderToday,alerts:renderAlerts,jobs:renderJobs,job:renderJob,interview:renderInterview,stats:renderStats,settings:renderSettings,history:renderHistory})[view]();
   if(anim){p.classList.remove('anim');void p.offsetWidth;p.classList.add('anim')}
   renderSide();renderSugg();
 }
@@ -645,6 +645,7 @@ function handle(raw,sc){
 document.addEventListener('click',e=>{
   const b=e.target.closest('[data-cmd]');if(!b)return;
   const c=b.dataset.cmd;
+  if(c.startsWith('link:')){openALink(c.slice(5));return}
   if(c.startsWith('go:')){const[,what,arg]=c.split(':');
     if(what==='alerts')show('alerts');else if(what==='insights')showInsights(recordings[0]);else if(what==='open')openJob(+arg);
     return}
@@ -715,15 +716,61 @@ function realNudge(j){
 function kpi(l,v,d){return`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`}
 function renderTodayReal(){
   const S=realStats(),att=attentionList();
+  const notes=notifList().filter(i=>!CLEARED.has(i.key)),atts=att.map(a=>({kind:'att',key:'a:'+a[0],text:a[0],link:/^go:open:/.test(a[1])?'job:'+a[1].split(':')[2]:'',cmd:a[1],sub:'Open the job'})).filter(i=>!CLEARED.has(i.key));
+  setTimeout(()=>markSeen([...notes,...atts]),0);
   const nx=S.inter.find(j=>j.next);
-  $('#page').innerHTML=`<div class="hero"><div class="d">${TODAY.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div><h2>Hi, Gilad.</h2><p>Your real job search, from Gmail and calendar.</p></div>
+  $('#page').innerHTML=`<div class="hero"><div class="d">${TODAY.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}<button class="link histl" data-hist data-tip="Everything that showed up here, including cleared items">History</button></div><h2>Hi, Gilad.</h2><p>Your real job search, from Gmail and calendar.</p></div>
   <div class="kpis">${kpi('In interviews',S.inter.length,nx?esc(nx.co)+' '+esc(nx.next.split(',')[0]):'')}${kpi('Waiting on reply',S.waiting.length,'No answer yet')}
   ${kpi('Reply rate',S.rate+'%',`${S.ap.filter(j=>j.firstReply).length} of ${S.ap.length} applications`)}${kpi('Days to reply',S.med??'–','Median')}</div>
-  <div class="grid2"><div><div class="lbl">Needs attention</div><div class="list">
-   ${att.map(a=>hrow('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',esc(a[0]),'Open the job',a[1])).join('')||'<div class="empty">Nothing urgent.</div>'}</div></div>
+  <div class="grid2"><div>${todaySection('note','Notifications',notes,'Nothing new.')}${todaySection('att','Needs attention',atts,'Nothing urgent.')}</div>
   <div><div class="lbl">Where you stand</div>${legend}${S.waiting.filter(j=>j.days!=null).sort((a,b)=>a.days-b.days).map(j=>track(j)).join('')}${axis}
   <div class="foot">Band = when companies usually answered you.</div></div></div>`;
 }
+/* Today: notifications (news from your email and calendar), clear buttons, and history */
+let CLEARED=new Set();const SEEN=new Set(),TITEMS={};
+const MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function stepDay(l){const m=/^([A-Z][a-z]{2}) (\d{1,2})$/.exec(String(l));if(!m)return null;let d=new Date(TODAY.getFullYear(),MONS.indexOf(m[1]),+m[2]);if(d-TODAY>60*DAY)d=new Date(TODAY.getFullYear()-1,MONS.indexOf(m[1]),+m[2]);return d}
+function notifList(){
+  const out=[];
+  jobs.forEach(j=>(j.tl0||j.tl).forEach(t=>{
+    const m=t[2]||{};if(m.s!=='gmail'&&m.s!=='calendar')return;if(/\(coming up\)|reminder/i.test(t[1]))return;
+    const d=stepDay(t[0]);if(!d||d>TODAY||TODAY-d>14*DAY)return;
+    const text=`${j.co}: ${t[1]}`;out.push({kind:'note',key:`n:${j.id}:${t[0]}:${t[1]}`,text,d,link:'job:'+j.id,sub:`${t[0]} · ${m.s==='calendar'?'Calendar':'Gmail'}`,bad:/reject|turned down|not moving/i.test(t[1])});
+  }));
+  return out.sort((a,b)=>b.d-a.d).slice(0,10);
+}
+const IC_BELL='<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',IC_CLOCK='<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>';
+function todaySection(kind,title,items,empty){
+  items.forEach(i=>TITEMS[i.key]=i);
+  return `<div class="lblrow"><div class="lbl">${title}</div>${items.length>1?`<button class="link clrall" data-clrall="${kind}">Clear all</button>`:''}</div>
+  <div class="list" data-sec="${kind}">${items.map(i=>`<div class="rowx${i.bad?' bad':''}">${hrow(kind==='note'?IC_BELL:IC_CLOCK,esc(i.text),esc(i.sub),i.cmd||'link:'+i.link)}<button class="xclr" data-clr="${esc(i.key)}" data-tip="Clear" aria-label="Clear">${I('<path d="M6 6l12 12M18 6L6 18"/>')}</button></div>`).join('')||`<div class="empty sm">${empty}</div>`}</div>`;
+}
+const pack=i=>({key:i.key,kind:i.kind,text:i.text,link:i.link||''});
+function markSeen(items){const fresh=items.filter(i=>!SEEN.has(i.key));if(!fresh.length||!REAL)return;fresh.forEach(i=>SEEN.add(i.key));api('/api/today',{op:'seen',items:fresh.map(pack)}).catch(()=>{})}
+async function loadCleared(){try{const r=await api('/api/today',{op:'cleared'});CLEARED=new Set(r.keys||[]);if(view==='today')render()}catch{}}
+function clearItems(keys){
+  const items=keys.map(k=>TITEMS[k]).filter(Boolean);if(!items.length)return;
+  keys.forEach(k=>CLEARED.add(k));
+  const rows=[...document.querySelectorAll('.xclr')].filter(b=>keys.includes(b.dataset.clr)).map(b=>b.closest('.rowx'));
+  rows.forEach(r=>r.animate?r.animate([{opacity:1,height:r.offsetHeight+'px'},{opacity:0,height:'0px'}],{duration:260,easing:'cubic-bezier(.4,0,.2,1)',fill:'forwards'}):0);
+  setTimeout(()=>{if(view==='today')render()},270);
+  api('/api/today',{op:'clear',items:items.map(pack)}).catch(()=>toast('Could not save. Check your connection.'));
+  toast(items.length>1?`Cleared ${items.length}. See them in History`:'Cleared. See it in History');
+}
+document.addEventListener('click',e=>{
+  const x=e.target.closest('[data-clr]');if(x){e.stopPropagation();clearItems([x.dataset.clr]);return}
+  const all=e.target.closest('[data-clrall]');if(all){clearItems([...document.querySelectorAll(`[data-sec="${all.dataset.clrall}"] [data-clr]`)].map(b=>b.dataset.clr));return}
+  if(e.target.closest('[data-hist]')){show('history',true);return}
+  const r=e.target.closest('[data-restore]');if(r){const k=r.dataset.restore;CLEARED.delete(k);r.closest('.hrow2').classList.remove('off');r.remove();api('/api/today',{op:'restore',key:k}).catch(()=>{});toast('Back on Today')}
+  const o=e.target.closest('[data-hopen]');if(o&&!e.target.closest('[data-restore]')){openALink(o.dataset.hopen)}
+},true);
+async function renderHistory(){
+  $('#page').innerHTML=`<button class="back" data-v-today>‹ Today</button><div class="ph"><h1>History</h1></div><div class="t2" style="margin-top:-8px">Everything that showed up on Today, newest first. Cleared items can be brought back.</div><div class="list" id="histList" style="margin-top:18px"><div class="t2 logpad">Loading…</div></div>`;
+  try{const r=await api('/api/today',{op:'history',limit:100});if(view!=='history')return;
+    $('#histList').innerHTML=(r.items||[]).map(i=>`<div class="hrow2${i.cleared_at?' off':''}"${i.link?` data-hopen="${esc(i.link)}" role="button" tabindex="0"`:''}><span class="mini">${I(i.kind==='note'?IC_BELL:IC_CLOCK)}</span><div class="txt"><div class="t1">${esc(i.text)}</div><div class="t2">${i.kind==='note'?'Notification':'Needs attention'} · ${esc(fmtWhen(i.first_seen))}${i.cleared_at?' · Cleared':''}</div></div>${i.cleared_at?`<button class="link" data-restore="${esc(i.key)}">Bring back</button>`:''}</div>`).join('')||'<div class="empty sm">Nothing yet.</div>'}
+  catch(x){$('#histList').innerHTML=`<div class="t2 logpad">${esc(x.message||'Could not load.')}</div>`}
+}
+document.addEventListener('click',e=>{if(e.target.closest('[data-v-today]'))show('today',true)});
 function renderStatsReal(){
   const S=realStats();
   const wk=[];for(let i=7;i>=0;i--){const end=new Date(TODAY-i*7*DAY),start=new Date(end-6*DAY);
@@ -759,6 +806,7 @@ function signOut(){store.del('jobimp-token');store.del('jobimp-account');api('/a
 async function openReal(){
   const d=await api('/api/jobs');loadReal(d);startApp();
   try{api('/api/jobs',{op:'tz',tz:Intl.DateTimeFormat().resolvedOptions().timeZone})}catch{}
+  loadCleared();
   if(GOOGLE.importing&&GOOGLE.ai!==false)runImport();else linkOldMail();
 }
 $('#login').addEventListener('click',async e=>{

@@ -84,6 +84,16 @@ create table if not exists agent_undo (
 create index if not exists agent_undo_user on agent_undo (user_id, id desc);
 alter table agent_undo add column if not exists items jsonb;
 alter table agent_undo add column if not exists ask text;
+create table if not exists today_items (
+  user_id text not null references users(id) on delete cascade,
+  key text not null,
+  kind text not null,
+  text text not null,
+  link text,
+  first_seen timestamptz not null default now(),
+  cleared_at timestamptz,
+  primary key (user_id, key)
+);
 create table if not exists jobs_backup (
   id serial primary key,
   user_id text not null references users(id) on delete cascade,
