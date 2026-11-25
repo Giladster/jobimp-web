@@ -76,7 +76,11 @@ async function applyEvent(user, ev, jobs) {
   const has = (l, t) => tl.some(e => e[0] === l && String(e[1]).toLowerCase() === t.toLowerCase());
   if (!has(lab, note)) tl.unshift([lab, note, meta]);
   let status = j.status, applied = j.applied, firstReply = j.first_reply, next = j.next_raw;
+  // An email from before the job was closed does not reopen it (e.g. when Gmail is read again).
+  const closedAt = Math.max(0, ...(j.tl || []).filter(e => /^Closed\b/.test(String(e[1]))).map(e => labelDate(e[0], now)));
+  const oldNews = j.status === 'closed' && closedAt && Date.UTC(...day.split('-').map((v, k) => k === 1 ? v - 1 : +v)) <= closedAt;
   if (ev.kind === 'rejected') { status = 'closed'; next = null; tl = tl.filter(notUpcoming); }
+  else if (oldNews) { /* stays closed */ }
   else if (ev.kind === 'offer') status = 'offer';
   else if (ev.kind === 'applied') { if (status === 'saved') status = 'applied'; if (!applied) applied = day; }
   else if (STATUS_OF[ev.kind] === 'interview' && status !== 'offer') status = 'interview';
@@ -103,7 +107,8 @@ async function autoClose(user) {
   let n = 0;
   for (const j of rows) {
     const tl = Array.isArray(j.tl) ? j.tl : [];
-    const dates = tl.map(e => labelDate(e[0], now)).filter(Boolean);
+    // Count from the latest real news. The app's own "Closed" steps are not news.
+    const dates = tl.filter(e => !/^Closed\b/.test(String(e[1]))).map(e => labelDate(e[0], now)).filter(Boolean);
     if (dates.some(d => d > today)) continue; // an interview is still ahead
     if (j.next_raw) { const m = /^\w{3} ([A-Z][a-z]{2} \d{1,2})/.exec(j.next_raw); if (m && labelDate(m[1], now) >= today) continue; }
     [j.applied, j.first_reply].forEach(d => { if (d) dates.push(Date.UTC(...String(d).slice(0, 10).split('-').map((v, k) => k === 1 ? v - 1 : +v))); });
