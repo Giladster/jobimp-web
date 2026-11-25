@@ -193,14 +193,14 @@ function guessStep(x){x=String(x);
   if(/interview|invited|meeting|\bcall\b|on-?site|round/i.test(x))return '?';
   if(/^(you )?appl/i.test(x))return 'applied';
   return null}
-const stepOf=t=>{const m=t[2];if(m?.t)return m.t==='-'?null:m.t;return guessStep(t[1])};
+// Presenting the assignment in a meeting is an interview, not part of the test.
+const stepOf=t=>{const m=t[2];let s=m?.t?(m.t==='-'?null:m.t):guessStep(t[1]);if(s==='test'&&/present/i.test(t[1]))s='manager';return s};
 const dlab=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
 // Group the timeline into steps, oldest first. Repeats in a row join one step ("Manager ×3"); small updates ride along with the step before them.
 function jobSteps(j){
-  const ev=j.tl.map((t,k)=>({t,k,d:tlDate(t[0]),s:stepOf(t)})).filter(e=>e.d).sort((a,b)=>a.d-b.d||b.k-a.k);
-  // One day = one step: the same interview can come as an email and a calendar invite tagged differently; keep the earlier stage.
-  const low={};for(const e of ev){const r=BSTEPS.indexOf(e.s);if(r<0||e.t[2]?.s==='you')continue;const k=+e.d;if(low[k]==null||r<low[k])low[k]=r}
-  for(const e of ev){const r=low[+e.d];if(r!=null&&e.t[2]?.s!=='you'&&(e.s==='?'||BSTEPS.includes(e.s)))e.s=BSTEPS[r]}
+  // Same day: earlier stages first (an HR call before the manager interview), small updates after the step.
+  const rk=s=>s==null?99:s==='?'?2.5:STEPS.indexOf(s);
+  const ev=j.tl.map((t,k)=>({t,k,d:tlDate(t[0]),s:stepOf(t)})).filter(e=>e.d).sort((a,b)=>a.d-b.d||rk(a.s)-rk(b.s)||b.k-a.k);
   const g=[];let cur=null;const pre=[];
   for(const e of ev){
     let s=e.s;if(s==='?')s=g.some(x=>x.s!=='applied')?'manager':'hr';
@@ -246,6 +246,15 @@ function editStep(j,k){
   openModal('Edit step',stepForm(t,true));
   $('#spSave').onclick=()=>{tl[k]=readStep(t);sortTl(j);if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Saved')};
   $('#spDel').onclick=()=>{tl.splice(k,1);if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Step removed')};
+}
+// A whole step: change its type, or remove it (and everything under it).
+function editGroup(j,i){
+  const x=jobSteps(j)[i];if(!x)return;const tl=j.tl0||j.tl;
+  openModal(`Edit ${x.name} step`,`<div class="edf"><label>Step<select id="sgT">${STEPS.map(v=>`<option value="${v}"${v===x.s?' selected':''}>${STEPL[v]}</option>`).join('')}</select></label>
+    <div class="hint">Changes all ${x.items.length} items in this step. Use the pencil on a single item to change its name or date.</div>
+    <button class="pbtn pri" id="sgSave">Save</button><button class="link danger" id="sgDel">Remove this step</button></div>`);
+  $('#sgSave').onclick=()=>{const v=$('#sgT').value;x.items.forEach(e=>{const t=tl[e.k];if(t&&stepOf(t))t[2]={...(t[2]||{s:'you',id:''}),t:v}});if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Saved')};
+  $('#sgDel').onclick=()=>{const ks=new Set(x.items.map(e=>e.k));const keep=tl.filter((t,k)=>!ks.has(k));tl.length=0;tl.push(...keep);if(!REAL)j.tl=tl;stepSel={id:j.id,i:null};closeModal();afterStepEdit(j,'Step removed')};
 }
 // Board "by step": dragging a card moves the job to that step today ("Moved to X by you").
 // Dragging it back removes that move. Only the last move of a day is kept.
@@ -310,9 +319,9 @@ function stepsBox(j){
   const n=g.length+(end?1:0);
   const dots=g.map((x,i)=>`<button class="sd${i===c?' cur':''}${x.fut?' up':''}${i===stepSel.i?' on':''}" data-si="${i}" title="${esc(x.name+' · '+x.date)}" aria-pressed="${i===stepSel.i}"><span class="ln"><i class="${i?i<=c?'s':'g':''}"></i><span class="d"></span><i class="${i<n-1?i<c?'s':'g':''}"></i></span><span class="n">${esc(x.name)}</span><small>${esc(x.date)}</small></button>`).join('')
     +(end?`<div class="sd ${end.cls} endm"><span class="ln"><i class="${g.length?'g':''}"></i><span class="d"></span><i></i></span><span class="n">${esc(end.name)}</span><small></small></div>`:'');
-  const sel=g[stepSel.i];
-  const det=sel?`<div class="sdh"><b>${esc(sel.name)}</b><span>${esc(sel.date)}</span><button class="link" data-addstep>+ Add step</button></div>
-    ${sel.items.map(e=>{const t=e.t,tap=stepTap(t[1],t[2]);return`<div class="sdi"><span class="d">${esc(t[0])}</span><span class="x">${esc(t[1])}${t[2]?.f?`<span class="clip">${I(IC_CLIP)}</span>`:''}</span>${tap?`<button class="link" data-step="${e.k}">${t[2]?.s==='calendar'?'Invite':'Email'} ›</button>`:''}<button class="sbtn xs" data-edstep="${e.k}" title="Edit step" aria-label="Edit this step">${I(IC_EDIT)}</button></div>`}).join('')}`
+  // Every step with its emails, under its own header. Tapping a dot jumps to that step.
+  const row=e=>{const t=e.t,tap=stepTap(t[1],t[2]);return`<div class="sdi"><span class="d">${esc(t[0])}</span><span class="x">${esc(t[1])}${t[2]?.f?`<span class="clip">${I(IC_CLIP)}</span>`:''}</span>${tap?`<button class="link" data-step="${e.k}">${t[2]?.s==='calendar'?'Invite':'Email'} ›</button>`:''}<button class="sbtn xs" data-edstep="${e.k}" title="Edit" aria-label="Edit this item">${I(IC_EDIT)}</button></div>`};
+  const det=g.length?`<div class="sdtop"><button class="link" data-addstep>+ Add step</button></div>`+g.map((x,i)=>`<div class="sdg${i===stepSel.i?' on':''}" id="sdg${i}"><div class="sdh"><b>${esc(x.name)}</b><span>${esc(x.date)}</span><button class="sbtn xs" data-edgrp="${i}" title="Edit this step" aria-label="Edit the ${esc(x.name)} step">${I(IC_EDIT)}</button></div>${x.items.map(row).join('')}</div>`).join('')
     :`<div class="sdh"><span>No steps yet. They appear as emails and invites come in.</span><button class="link" data-addstep>+ Add step</button></div>`;
   return `<div class="steps"><div class="strack"><div style="grid-template-columns:repeat(${Math.max(n,1)},minmax(96px,1fr))">${dots}</div></div><div class="sdet">${det}</div></div>`;
 }
@@ -349,7 +358,8 @@ $('#page').addEventListener('click',e=>{
   if(e.target.closest('[data-back]')){show('jobs');return}
   if(e.target.closest('[data-edit]')){editJob();return}
   const st=e.target.closest('[data-step]');if(st){openStep(curJob,+st.dataset.step);return}
-  const si=e.target.closest('[data-si]');if(si){stepSel={id:curJob.id,i:+si.dataset.si};renderJob();return}
+  const si=e.target.closest('[data-si]');if(si){stepSel={id:curJob.id,i:+si.dataset.si};renderJob();$('#sdg'+si.dataset.si)?.scrollIntoView({behavior:'smooth',block:'nearest'});return}
+  const eg=e.target.closest('[data-edgrp]');if(eg){editGroup(curJob,+eg.dataset.edgrp);return}
   if(e.target.closest('[data-addstep]')){addStep(curJob);return}
   const es=e.target.closest('[data-edstep]');if(es){editStep(curJob,+es.dataset.edstep);return}
   if(e.target.closest('[data-act]')){actOpen=!actOpen;const b=e.target.closest('[data-act]');b.setAttribute('aria-expanded',actOpen);b.textContent=actOpen?'Hide all activity':`Show all activity (${curJob.tl.length})`;$('#actColl').classList.toggle('open',actOpen);return}
