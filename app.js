@@ -1,5 +1,5 @@
 const ST=['applied','interview','offer','closed','saved'];
-const SL={saved:'Saved',applied:'Awaiting reply',interview:'Interview',offer:'Offer',closed:'Closed'};
+const SL={saved:'Saved',applied:'Waiting',interview:'In process',offer:'Offer',closed:'Closed'};
 const SOURCES=['All','LinkedIn','Company site','Drushim','AllJobs'];
 const DEMO_JOBS=[
  {id:1,co:'Wix',role:'Product Manager, Editor',loc:'Tel Aviv',src:'LinkedIn',status:'applied',days:10,tl:[['Nov 5','Applied via LinkedIn'],['Nov 4','Added from Found']]},
@@ -110,31 +110,148 @@ function takeAlert(id,add){
   setTimeout(()=>{alerts=alerts.filter(x=>x!==a);render()},240);
   toast(add?`${a.co} added to My jobs`:'Skipped');if(add)addJob(a,'Added from Found');
 }
+// The + button: add a job by hand. An email address (or a company domain) can be watched, so its emails join this job.
+function addJobForm(){
+  let st='applied',sp='hr';
+  const chips=(id,list,val)=>`<div class="chips" id="${id}">${list.map(([k,l])=>`<button type="button" class="chip" data-v="${k}" aria-pressed="${k===val}">${l}</button>`).join('')}</div>`;
+  openModal('Add a job',`<div class="edf"><div class="two"><label>Company<input id="ajCo" maxlength="80" placeholder="e.g. Wix"></label><label>Role<input id="ajRole" maxlength="120" placeholder="e.g. Product Manager"></label></div>
+    <label>Job link (optional)<input id="ajLink" type="url" placeholder="https://"></label>
+    <label>Email to watch (optional)<input id="ajMail" type="email" placeholder="recruiter@company.com or company.com"><span class="hint">Emails from or to this address are added to this job.</span></label>
+    <div><div class="flab">Status</div>${chips('ajSt',ST.map(s=>[s,SL[s]]),st)}</div>
+    <div id="ajSpBox" hidden><div class="flab">Current step</div>${chips('ajSp',BSTEPS.map(s=>[s,STEPL[s]]),sp)}</div>
+    <button class="pbtn pri" id="ajGo">Add job</button></div>`);
+  const pick=(id,fn)=>$('#'+id).onclick=e=>{const c=e.target.closest('.chip');if(!c)return;$('#'+id).querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x===c));fn(c.dataset.v)};
+  pick('ajSt',v=>{st=v;$('#ajSpBox').hidden=v!=='interview'});pick('ajSp',v=>sp=v);
+  setTimeout(()=>$('#ajCo')?.focus(),60);
+  $('#ajGo').onclick=async()=>{
+    const co=$('#ajCo').value.trim(),role=$('#ajRole').value.trim(),link=$('#ajLink').value.trim(),contact=$('#ajMail').value.trim();
+    if(!co){toast('Company is needed');return}
+    if(link&&!/^https?:\/\/\S+$/i.test(link)){toast('The link should start with https://');return}
+    if(!REAL){const j=addJob({co,role:role||'Role not named',loc:'',src:'Manual'},'Added by you');j.status=st;if(st==='interview'){j.tl.unshift([dlab(TODAY),STEPL[sp],{s:'you',id:'',t:sp}])}
+      closeModal();jobTab=st;render();toast(`${co} added`);return}
+    try{$('#ajGo').disabled=true;
+      const r=await api('/api/jobs',{op:'add',co,role,link,contact,status:st,step:st==='interview'?sp:null,stepText:STEPL[sp],day:localIso(TODAY)});
+      closeModal();await pull(true);jobTab=st;const j=jobs.find(x=>x.id===r.id);if(j)openJob(j.id);else render();toast(`${co} added`)}
+    catch(x){$('#ajGo').disabled=false;toast(x.message||'Could not add the job.')}};
+}
 function addJob(a,how){const j={id:Date.now(),co:a.co,role:a.role,loc:a.loc,src:a.src,status:'saved',tl:[['Today',how]]};jobs.unshift(j);return j}
 
 /* my jobs */
 const IC_BOARD='<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16M15 4v16"/>',IC_LIST='<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>';
+let boardBy='status',stepFilter=null;
+const IC_PLUS='<path d="M12 5v14M5 12h14"/>';
 function renderJobs(){
-  let h=`<div class="ph"><h1>My jobs</h1><div class="seg"><button class="${jobsMode==='list'?'on':''}" data-mode="list">${I(IC_LIST)}List</button><button class="${jobsMode==='board'?'on':''}" data-mode="board">${I(IC_BOARD)}Board</button></div></div>`;
+  let h=`<div class="ph"><h1>My jobs</h1><button class="addj" data-addjob>${I(IC_PLUS)}Add job</button><div class="seg"><button class="${jobsMode==='list'?'on':''}" data-mode="list">${I(IC_LIST)}List</button><button class="${jobsMode==='board'?'on':''}" data-mode="board">${I(IC_BOARD)}Board</button></div></div>`;
   if(jobsMode==='board'){
+    h+=`<div class="seg sm bby">${[['status','By status'],['step','By step']].map(([k,l])=>`<button class="${boardBy===k?'on':''}" data-bby="${k}">${l}</button>`).join('')}</div>`;
+    if(boardBy==='step'){
+      const act=jobs.filter(j=>j.status==='interview'||j.status==='offer');
+      h+=`<div class="cols">${BSTEPS.map(s=>{const js=act.filter(j=>(curStep(j)||'hr')===s);return`<div class="col" data-drop="step:${s}"><h4>${STEPL[s]}<span class="c">${js.length}</span></h4>
+       ${js.map(j=>{const g=jobSteps(j),c=curIdx(g);return`<button class="kc" data-open="${j.id}" data-drag="${j.id}"><div class="co">${esc(j.co)}</div><div class="rl">${esc(j.role)}</div>
+       <div class="ft"><span class="acc">${esc(j.next?j.next.split(',')[0]:c>=0?g[c].name+' · '+g[c].date.split(' – ').pop():'')}</span></div></button>`}).join('')||'<div class="kempty">None yet</div>'}</div>`}).join('')}</div>
+       <div class="note" style="margin-top:14px">Jobs in process, by the step they are at. Drag a card to fix its step. The Agent moves cards when new emails or invites come in.</div>`;
+    }else{
     h+=`<div class="cols">${ST.map(s=>{const js=jobs.filter(j=>j.status===s);return`<div class="col" data-drop="${s}"><h4>${s==='saved'?`<span class="bm" title="Saved">${I(IC_BOOKMARK)}</span>`:`<span class="st ${s}">${SL[s]}</span>`}<span class="c">${js.length}</span></h4>
      ${js.map(j=>`<button class="kc" data-open="${j.id}" data-drag="${j.id}"><div class="co">${esc(j.co)}</div><div class="rl">${esc(j.role)}</div>
-     <div class="ft"><span>${j.next?j.next.split(',')[0]:j.days!=null&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':closedWhy(j)}</span></div>${delBtn(j)}</button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
-     <div class="note" style="margin-top:14px">Click a card to open it. Its agent opens on the right.</div>`;
+     <div class="ft"><span>${j.next?j.next.split(',')[0]:s==='interview'&&curStep(j)?STEPL[curStep(j)]:j.days!=null&&s!=='closed'?j.days+'d since applied':s==='saved'?'Not applied':closedWhy(j)}</span></div>${delBtn(j)}</button>`).join('')||'<div class="kempty">Empty</div>'}</div>`}).join('')}</div>
+     <div class="note" style="margin-top:14px">Click a card to open it. Its agent opens on the right.</div>`;}
   }else{
-    const js=jobs.filter(j=>j.status===jobTab);
-    h+=`<div class="tabsline">${ST.map(s=>`<button class="${s===jobTab?'on':''}" data-s="${s}" data-drop="${s}"${s==='saved'?' title="Saved" aria-label="Saved"':''}>${s==='saved'?`<span class="bm">${I(IC_BOOKMARK)}</span>`:SL[s]}<span class="n">${jobs.filter(j=>j.status===s).length}</span></button>`).join('')}</div>
-    ${js.length?`<div class="list" style="margin-top:4px">${js.map(j=>`<button class="row" data-open="${j.id}" data-drag="${j.id}">${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)}</div><div class="t2">${esc(j.role)}${j.loc?' · '+esc(j.loc):''}</div>${j.next?`<div class="next">${j.next}</div>`:''}</div>
-     <span class="src">${j.src}</span>
-     ${(j.status==='applied'||j.status==='interview')&&j.days!=null?`<div class="days${j.days>=10&&j.status==='applied'?' hot':''}"><div class="n">${j.days}d</div><div class="l">applied</div></div>`:closedWhy(j)?`<div class="days why-c${closedWhy(j)==='Rejected'?' bad':''}">${closedWhy(j)}</div>`:'<div class="days"></div>'}${delBtn(j)}<span class="chev">›</span></button>`).join('')}</div>`:`<div class="empty">Nothing here yet.</div>`}`;
+    let js=jobs.filter(j=>j.status===jobTab);
+    h+=`<div class="tabsline">${ST.map(s=>`<button class="${s===jobTab?'on':''}" data-s="${s}" data-drop="${s}"${s==='saved'?' title="Saved" aria-label="Saved"':''}>${s==='saved'?`<span class="bm">${I(IC_BOOKMARK)}</span>`:SL[s]}<span class="n">${jobs.filter(j=>j.status===s).length}</span></button>`).join('')}</div>`;
+    if(jobTab==='interview'){
+      const cnt={};js.forEach(j=>{const c=curStep(j)||'hr';cnt[c]=(cnt[c]||0)+1});
+      if(stepFilter&&!cnt[stepFilter])stepFilter=null;
+      h+=`<div class="lbl">Where they are now</div><div class="scount">${BSTEPS.map(s=>`<button class="${cnt[s]?'':'zero'}${stepFilter===s?' on':''}" data-sf="${s}"${cnt[s]?'':' disabled'}><b>${cnt[s]||0}</b><span>${STEPL[s]}</span></button>`).join('')}</div>`;
+      if(stepFilter)js=js.filter(j=>(curStep(j)||'hr')===stepFilter);
+    }
+    h+=`${js.length?`<div class="list" style="margin-top:4px">${js.map(j=>`<button class="row" data-open="${j.id}" data-drag="${j.id}">${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)}</div><div class="t2">${esc(j.role)}${j.loc?' · '+esc(j.loc):''}</div>${j.next?`<div class="next">${j.next}</div>`:''}</div>
+     ${j.status==='interview'||j.status==='offer'?miniSteps(j)||`<span class="src">${j.src}</span>`:`<span class="src">${j.src}</span>`}
+     ${j.status==='applied'&&j.days!=null?`<div class="days${j.days>=10?' hot':''}"><div class="n">${j.days}d</div><div class="l">applied</div></div>`:closedWhy(j)?`<div class="days why-c${closedWhy(j)==='Rejected'?' bad':''}">${closedWhy(j)}</div>`:j.status==='interview'?'':'<div class="days"></div>'}${delBtn(j)}<span class="chev">›</span></button>`).join('')}</div>`:`<div class="empty">Nothing here yet.</div>`}`;
   }
   $('#page').innerHTML=h;
 }
 $('#page').addEventListener('click',e=>{
   if(view!=='jobs')return;
   const m=e.target.closest('[data-mode]');if(m){jobsMode=m.dataset.mode;render(true);return}
-  const s=e.target.closest('[data-s]');if(s){jobTab=s.dataset.s;renderJobs()}
+  if(e.target.closest('[data-addjob]')){addJobForm();return}
+  const bb=e.target.closest('[data-bby]');if(bb){boardBy=bb.dataset.bby;renderJobs();return}
+  const sf=e.target.closest('[data-sf]');if(sf){stepFilter=stepFilter===sf.dataset.sf?null:sf.dataset.sf;renderJobs();return}
+  const s=e.target.closest('[data-s]');if(s){jobTab=s.dataset.s;stepFilter=null;renderJobs()}
 });
+
+/* hiring steps: each timeline entry belongs to one stage. The Agent sets it; older entries are guessed from their text. */
+const STEPS=['applied','hr','test','manager','references','offer'],BSTEPS=['hr','test','manager','references','offer'];
+const STEPL={applied:'Applied',hr:'HR call',test:'Test',manager:'Manager',references:'References',offer:'Offer'};
+const APP_LINE=/^(Moved to |Closed|Saved for later|Added |Role changed|Company changed)/;
+function guessStep(x){x=String(x);
+  if(APP_LINE.test(x)||/cancel|reschedul|remind|moved|confirm|shared|follow|thank|declin|withdr|replied|answer|asked|reject|unfortunately|no news|\bnot\b/i.test(x))return null;
+  if(/offer|salary/i.test(x))return 'offer';
+  if(/referen/i.test(x))return 'references';
+  if(/assignment|home ?task|\btest|exercise|case study|homework|quiz|coding|technical/i.test(x))return 'test';
+  if(/\bhr\b|recruit|screen|intro|first call|talent|phone/i.test(x))return 'hr';
+  if(/manager|team|lead\b|founder|ceo|cto|vp\b|director|final/i.test(x))return 'manager';
+  if(/interview|invited|meeting|\bcall\b|on-?site|round/i.test(x))return '?';
+  if(/^(you )?appl/i.test(x))return 'applied';
+  return null}
+const stepOf=t=>{const m=t[2];if(m?.t)return m.t==='-'?null:m.t;return guessStep(t[1])};
+const dlab=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+// Group the timeline into steps, oldest first. Repeats in a row join one step ("Manager ×3"); small updates ride along with the step before them.
+function jobSteps(j){
+  const ev=j.tl.map((t,k)=>({t,k,d:tlDate(t[0]),s:stepOf(t)})).filter(e=>e.d).sort((a,b)=>a.d-b.d||b.k-a.k);
+  const g=[];let cur=null;const pre=[];
+  for(const e of ev){
+    let s=e.s;if(s==='?')s=g.some(x=>x.s!=='applied')?'manager':'hr';
+    if(!s){(cur?cur.items:pre).push(e);continue}
+    const n=!/^You\b/.test(e.t[1]);
+    if(cur&&cur.s===s){cur.items.push(e);cur.end=e.d;if(n)cur.days.add(+e.d)}
+    else{cur={s,start:e.d,end:e.d,items:[e],days:new Set(n?[+e.d]:[])};g.push(cur)}
+  }
+  if(g.length)g[0].items.unshift(...pre);
+  g.forEach(x=>{const n=Math.max(1,x.days.size);x.name=STEPL[x.s]+(n>1?' ×'+n:'');x.fut=x.start>TODAY;
+    x.date=+x.start===+x.end?dlab(x.start):dlab(x.start)+' – '+dlab(x.end)});
+  return g;
+}
+const curIdx=g=>{let c=-1;g.forEach((x,i)=>{if(!x.fut)c=i});return c<0&&g.length?0:c};
+function curStep(j){if(j.status==='offer')return 'offer';const g=jobSteps(j),c=curIdx(g);return c>=0?g[c].s:null}
+function miniSteps(j){
+  const g=jobSteps(j).filter(x=>x.s!=='applied'),c=curIdx(g);if(!g.length)return '';
+  const show=g.slice(-5),off=g.length-show.length;
+  return `<span class="mini"><span class="mdots">${show.map((x,i)=>`${i?'<i></i>':''}<b class="${i+off===c?'cur':x.fut?'fut':''}" title="${esc(x.name+' · '+x.date)}"></b>`).join('')}</span><span class="mlab">${esc(c>=0?g[c].name:'')}</span></span>`;
+}
+// Steps you add, change or remove by hand.
+function stepForm(t,del){
+  const d=t?tlDate(t[0])||TODAY:TODAY,s=t?stepOf(t):'hr';
+  return `<div class="edf"><label>Step<select id="spT">${STEPS.map(x=>`<option value="${x}"${x===s||(s==='?'&&x==='manager')?' selected':''}>${STEPL[x]}</option>`).join('')}<option value="-"${t&&!s?' selected':''}>Not a step (just an update)</option></select></label>
+    <label>Date<input id="spD" type="date" value="${localIso(d)}"></label>
+    <label>Note<input id="spX" maxlength="60" value="${t?esc(t[1].replace(/\s*\((done|today|coming up)\)$/,'')):''}" placeholder="e.g. Call with the team lead"></label>
+    <button class="pbtn pri" id="spSave">Save</button>${del?`<button class="link danger" id="spDel">Remove this step</button>`:''}</div>`;
+}
+function readStep(old){
+  const t=$('#spT').value,ds=$('#spD').value;const d=ds?new Date(ds+'T00:00:00'):TODAY;
+  const x=$('#spX').value.trim()||(t==='-'?'Update':STEPL[t]);
+  const m={...(old?.[2]||{s:'you',id:''}),t};return [dlab(d),x,m];
+}
+function sortTl(j){j.tl0.sort((a,b)=>(tlDate(b[0])||0)-(tlDate(a[0])||0))}
+function afterStepEdit(j,msg){refreshTime();saveJob(j);render();toast(msg)}
+function addStep(j){
+  openModal('Add a step',stepForm(null,false));
+  $('#spSave').onclick=()=>{const e=readStep(null);j.tl0=j.tl0||j.tl;j.tl0.unshift(e);sortTl(j);if(!REAL)j.tl=j.tl0;
+    if(e[2].t!=='-'&&j.status!=='closed'&&j.status!=='offer')j.status=e[2].t==='offer'?'offer':'interview';closeModal();afterStepEdit(j,'Step added')};
+}
+function editStep(j,k){
+  const tl=j.tl0||j.tl,t=tl[k];if(!t)return;
+  openModal('Edit step',stepForm(t,true));
+  $('#spSave').onclick=()=>{tl[k]=readStep(t);sortTl(j);if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Saved')};
+  $('#spDel').onclick=()=>{tl.splice(k,1);if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Step removed')};
+}
+// Board "by step": dropping a card on a step column records that step for today.
+function setStep(j,s){
+  if(curStep(j)===s)return;
+  const e=[dlab(TODAY),STEPL[s]+' (set by you)',{s:'you',id:'',t:s}];
+  j.tl0=j.tl0||j.tl;j.tl0.unshift(e);if(!REAL)j.tl=j.tl0;
+  if(j.status!=='offer'||s==='offer')j.status=s==='offer'?'offer':'interview';
+  refreshTime();saveJob(j);render();toast(`${j.co} moved to ${STEPL[s]}`);
+}
 
 /* why a job is closed: from its timeline */
 function closedWhy(j){
@@ -152,13 +269,16 @@ function editJob(){
   const others=jobs.filter(x=>x.id!==j.id).sort((a,b)=>(b.co.toLowerCase()[0]===j.co.toLowerCase()[0])-(a.co.toLowerCase()[0]===j.co.toLowerCase()[0])||a.co.localeCompare(b.co));
   openModal('Edit job',`<div class="edf"><label>Company<input id="edCo" value="${esc(j.co)}" maxlength="80"></label>
     <label>Role<input id="edRole" value="${esc(j.role||'')}" maxlength="120"></label>
+    <label>Job link<input id="edLink" type="url" value="${esc(j.link||'')}" placeholder="https://"></label>
+    <label>Email to watch<input id="edMail" value="${esc(j.contact||'')}" placeholder="recruiter@company.com or company.com"><span class="hint">Emails from or to this address are added to this job.</span></label>
     <button class="pbtn pri" id="edSave">Save</button></div>
     ${others.length?`<div class="lbl">Same job twice?</div><div class="t2" style="margin-bottom:10px">Merge this job into another one. Their timelines join and this copy goes away.</div>
     <div class="edf row2"><select id="edInto" aria-label="Merge into"><option value="">Choose the other job…</option>${others.map(x=>`<option value="${x.id}">${esc(x.co)} · ${esc(x.role||'')}</option>`).join('')}</select><button class="pbtn" id="edMerge">Merge</button></div>`:''}`);
   $('#edSave').onclick=async()=>{
-    const co=$('#edCo').value.trim(),role=$('#edRole').value.trim();if(!co){toast('Company is needed');return}
-    if(!REAL){j.co=co;j.role=role;closeModal();render();return}
-    try{await api('/api/jobs',{op:'edit',id:j.id,co,role});closeModal();await pull(true);toast('Saved')}catch(x){toast(x.message||'Could not save.')}};
+    const co=$('#edCo').value.trim(),role=$('#edRole').value.trim(),link=$('#edLink').value.trim(),contact=$('#edMail').value.trim();if(!co){toast('Company is needed');return}
+    if(link&&!/^https?:\/\/\S+$/i.test(link)){toast('The link should start with https://');return}
+    if(!REAL){j.co=co;j.role=role;j.link=link;j.contact=contact;closeModal();render();return}
+    try{await api('/api/jobs',{op:'edit',id:j.id,co,role,link,contact});closeModal();await pull(true);toast('Saved')}catch(x){toast(x.message||'Could not save.')}};
   const m=$('#edMerge');if(m)m.onclick=async()=>{
     const into=+$('#edInto').value,t=jobs.find(x=>x.id===into);if(!t){toast('Choose the other job first');return}
     if(!REAL){t.tl=[...t.tl,...j.tl];jobs=jobs.filter(x=>x!==j);curJob=t;closeModal();show('job');toast(`Merged into ${t.co}`);return}
@@ -166,7 +286,22 @@ function editJob(){
 }
 
 /* job page */
-function openJob(id){const j=jobs.find(x=>x.id===id);if(!j)return;curJob=j;show('job');openAgentMobile(false)}
+let actOpen=false,stepSel={id:null,i:null};
+// The step line: main steps left to right. Tap (or hover) a dot to see its emails and invites.
+function stepsBox(j){
+  const g=jobSteps(j),c=curIdx(g);
+  if(stepSel.id!==j.id||stepSel.i==null||stepSel.i>=g.length)stepSel={id:j.id,i:c>=0?c:null};
+  const end=j.status==='closed'?{name:closedWhy(j)||'Closed',cls:'bad'}:j.status==='offer'&&!g.some(x=>x.s==='offer')?{name:'Offer',cls:'cur'}:j.status==='saved'?null:{name:'Next',cls:'fut'};
+  const n=g.length+(end?1:0);
+  const dots=g.map((x,i)=>`<button class="sd${i===c?' cur':''}${x.fut?' up':''}${i===stepSel.i?' on':''}" data-si="${i}" title="${esc(x.name+' · '+x.date)}" aria-pressed="${i===stepSel.i}"><span class="ln"><i class="${i?i<=c?'s':'g':''}"></i><span class="d"></span><i class="${i<n-1?i<c?'s':'g':''}"></i></span><span class="n">${esc(x.name)}</span><small>${esc(x.date)}</small></button>`).join('')
+    +(end?`<div class="sd ${end.cls} endm"><span class="ln"><i class="${g.length?'g':''}"></i><span class="d"></span><i></i></span><span class="n">${esc(end.name)}</span><small></small></div>`:'');
+  const sel=g[stepSel.i];
+  const det=sel?`<div class="sdh"><b>${esc(sel.name)}</b><span>${esc(sel.date)}</span><button class="link" data-addstep>+ Add step</button></div>
+    ${sel.items.map(e=>{const t=e.t,tap=stepTap(t[1],t[2]);return`<div class="sdi"><span class="d">${esc(t[0])}</span><span class="x">${esc(t[1])}${t[2]?.f?`<span class="clip">${I(IC_CLIP)}</span>`:''}</span>${tap?`<button class="link" data-step="${e.k}">${t[2]?.s==='calendar'?'Invite':'Email'} ›</button>`:''}<button class="sbtn xs" data-edstep="${e.k}" title="Edit step" aria-label="Edit this step">${I(IC_EDIT)}</button></div>`}).join('')}`
+    :`<div class="sdh"><span>No steps yet. They appear as emails and invites come in.</span><button class="link" data-addstep>+ Add step</button></div>`;
+  return `<div class="steps"><div class="strack"><div style="grid-template-columns:repeat(${Math.max(n,1)},minmax(96px,1fr))">${dots}</div></div><div class="sdet">${det}</div></div>`;
+}
+function openJob(id){const j=jobs.find(x=>x.id===id);if(!j)return;curJob=j;actOpen=false;show('job');openAgentMobile(false)}
 function renderJob(){
   const j=curJob;let n;
   if(REAL)n=realNudge(j);
@@ -179,10 +314,14 @@ function renderJob(){
   $('#page').innerHTML=`<button class="back" data-back>‹ My jobs</button>
   <div class="dh">${av(j.co,'lg')}<div style="flex:1"><h2>${esc(j.role)}</h2><div class="t2">${esc(j.co)}${j.loc?' · '+esc(j.loc):''} · <span class="src">${j.src}</span>${closedWhy(j)?` · <span class="why-c${closedWhy(j)==='Rejected'?' bad':''}">${closedWhy(j)}</span>`:''}</div></div><button class="sbtn ed" data-edit title="Edit or merge" aria-label="Edit or merge this job">${I(IC_EDIT)}</button><button class="sbtn" data-del="${j.id}" title="Remove this job" aria-label="Remove this job">${I(IC_TRASH)}</button></div>
   <div class="tabsline" style="margin-top:26px">${ST.map(s=>`<button class="${s===j.status?'on':''}" data-st="${s}"${s==='saved'?' title="Saved" aria-label="Saved"':''}>${s==='saved'?`<span class="bm">${I(IC_BOOKMARK)}</span>`:SL[s]}</button>`).join('')}</div>
+  ${stepsBox(j)}
   <div class="grid2" style="margin-top:26px">
     <div>${j.days!=null&&j.status!=='saved'?`<div class="count"><b>${j.days}</b>days since you applied</div><div style="margin-top:8px">${track(j,false)}${axis}</div>`:j.since?`<div class="count">In touch since ${esc(j.since)}. Apply date not in your email.</div>`:`<div class="count">Not applied yet. Apply early: replies drop after day 2.</div>`}
-      <div class="tlh"><div class="lbl">Timeline</div><div class="seg sm">${['Timeline','List'].map(m=>`<button class="${tlMode===m?'on':''}" data-tlm="${m}">${m}</button>`).join('')}</div></div>
-      ${tlMode==='List'?`<div class="list tl">${j.tl.map((t,k)=>`<div class="row${stepTap(t[1],t[2])?' tap':''}"${stepTap(t[1],t[2])?` data-step="${k}" role="button" tabindex="0"`:''}><span class="d">${t[0]}</span><span class="x">${esc(t[1])}${t[2]?.f?`<span class="clip">${I(IC_CLIP)}</span>`:''}</span></div>`).join('')}</div>`:visualTimeline(j)}</div>
+      ${j.link?`<a class="link jlink" href="${esc(j.link)}" target="_blank" rel="noopener">Job post ↗</a>`:''}
+      <button class="pbtn sm actt" data-act aria-expanded="${actOpen}">${actOpen?'Hide all activity':`Show all activity (${j.tl.length})`}</button>
+      <div class="coll${actOpen?' open':''}" id="actColl"><div>
+      <div class="tlh"><div class="lbl">All activity</div><div class="seg sm">${['Timeline','List'].map(m=>`<button class="${tlMode===m?'on':''}" data-tlm="${m}">${m}</button>`).join('')}</div></div>
+      ${tlMode==='List'?`<div class="list tl">${j.tl.map((t,k)=>`<div class="row${stepTap(t[1],t[2])?' tap':''}"${stepTap(t[1],t[2])?` data-step="${k}" role="button" tabindex="0"`:''}><span class="d">${t[0]}</span><span class="x">${esc(t[1])}${t[2]?.f?`<span class="clip">${I(IC_CLIP)}</span>`:''}</span></div>`).join('')}</div>`:visualTimeline(j)}</div></div></div>
     <div><button class="nudge" data-cmd="${esc(jobChips(j)[0])}"><span class="spark">${I(SPARK)}</span><div class="txt">${n}<div class="more">${esc(jobChips(j)[0])} →</div></div></button>
       <div class="lbl">Actions</div><div class="list">
       <button class="row" data-recfor="${esc(j.co)}"><span class="txt t1" style="font-weight:400">Record an interview</span><span class="chev">›</span></button>
@@ -195,6 +334,10 @@ $('#page').addEventListener('click',e=>{
   if(e.target.closest('[data-back]')){show('jobs');return}
   if(e.target.closest('[data-edit]')){editJob();return}
   const st=e.target.closest('[data-step]');if(st){openStep(curJob,+st.dataset.step);return}
+  const si=e.target.closest('[data-si]');if(si){stepSel={id:curJob.id,i:+si.dataset.si};renderJob();return}
+  if(e.target.closest('[data-addstep]')){addStep(curJob);return}
+  const es=e.target.closest('[data-edstep]');if(es){editStep(curJob,+es.dataset.edstep);return}
+  if(e.target.closest('[data-act]')){actOpen=!actOpen;const b=e.target.closest('[data-act]');b.setAttribute('aria-expanded',actOpen);b.textContent=actOpen?'Hide all activity':`Show all activity (${curJob.tl.length})`;$('#actColl').classList.toggle('open',actOpen);return}
   const tm=e.target.closest('[data-tlm]');if(tm){tlMode=tm.dataset.tlm;renderJob();return}
   const s=e.target.closest('[data-st]');if(s){setStatus(curJob,s.dataset.st);toast(`Moved to ${SL[s.dataset.st]}`);render();renderABar()}
 });
@@ -520,7 +663,7 @@ function loadReal(data){
   REAL=true;alerts=[];recordings=[];ME=data.name||'You';GOOGLE=data.google||{};VER=data.v||'';SETTINGS=data.settings||SETTINGS;
   const iso=localIso(TODAY);
   jobs=data.jobs.map((j,i)=>({id:j.id??i+1,co:j.co,role:j.role,loc:j.loc||'',src:j.src||'Email',status:j.status,next:null,nextRaw:j.next||null,
-    applied:j.applied,firstReply:j.firstReply,tl0:j.tl.map(t=>[...t]),tl:j.tl.map(t=>[...t]),
+    applied:j.applied,firstReply:j.firstReply,tl0:j.tl.map(t=>[...t]),tl:j.tl.map(t=>[...t]),link:j.link||'',contact:j.contact||'',
     days:j.applied?daysBetween(j.applied,iso):null,
     replied:j.applied&&j.firstReply?daysBetween(j.applied,j.firstReply):null,
     since:!j.applied&&j.firstReply?fmt(j.firstReply):null}));
@@ -723,7 +866,7 @@ function visualTimeline(j){
 /* tap a timeline step: see its email or calendar event, with files. Read only. */
 const IC_CLIP='<path d="M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15 7"/>';
 // Steps made inside the app (moves, auto-close) have no email behind them.
-const stepTap=(x,m)=>REAL&&m?.s!=='agent'&&m?.s!=='none'&&(m?.id||!/^(Moved to |Closed|Saved for later|Added |Interview \(coming up\))/.test(String(x)));
+const stepTap=(x,m)=>REAL&&m?.s!=='agent'&&m?.s!=='none'&&m?.s!=='you'&&(m?.id||!/^(Moved to |Closed|Saved for later|Added |Interview \(coming up\))/.test(String(x)));
 const fsize=n=>n>=1e6?(n/1e6).toFixed(1)+' MB':n>=1e3?Math.round(n/1e3)+' KB':n?n+' B':'';
 const fmtWhen=t=>{const d=new Date(t);return isNaN(d)?'':d.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 const nameOf=s=>String(s||'').replace(/\s*<[^>]*>/g,'').replace(/"/g,'').trim()||String(s||'');
@@ -844,7 +987,7 @@ document.addEventListener('click',async e=>{
   g.disabled=true;await loadLog();swapLog();
 });
 // Log rows saved before the clearer wording.
-const SLAB={saved:'Saved',applied:'Awaiting reply',interview:'Interview',offer:'Offer',closed:'Closed'};
+const SLAB=SL;
 function oldDid(r){const d=r.did||'';let m;
   if(m=/^Updated (.+) \((\w+)\)$/.exec(d))return `${m[1]}: added "${r.note||'Update'}" to timeline`;
   if(m=/^New job: (.+) \((\w+)\)$/.exec(d))return `${m[1]}: new job added (${SLAB[m[2]]||m[2]})`;
@@ -943,7 +1086,7 @@ function dragEnd(drop){
   if(!drag)return;clearTimeout(drag.timer);const d=drag;drag=null;
   if(!d.on)return;d.g.remove();d.el.classList.remove('dragging');document.body.classList.remove('is-dragging');d.t?.classList.remove('drop-on');
   eatClick=true;setTimeout(()=>eatClick=false,0);
-  if(drop&&d.t){const j=jobs.find(q=>q.id===d.id),s=d.t.dataset.drop;if(j&&s!==j.status)moveJob(j,s)}
+  if(drop&&d.t){const j=jobs.find(q=>q.id===d.id),s=d.t.dataset.drop;if(j&&s.startsWith('step:'))setStep(j,s.slice(5));else if(j&&s!==j.status)moveJob(j,s)}
 }
 document.addEventListener('pointerdown',e=>{
   const it=e.target.closest('[data-drag]');if(!it||(e.pointerType==='mouse'&&e.button!==0)||e.target.closest('[data-del]'))return;

@@ -447,6 +447,47 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .gdot.off{background:#666}.gdot.busy{background:#e0a84a;animation:gpulse 1.2s ease-in-out infinite}
 @keyframes gpulse{50%{opacity:.35}}
 a.acc{text-decoration:none;color:inherit}
+/* add job, step counts, step line */
+.addj{display:flex;align-items:center;gap:6px;height:32px;padding:0 13px;border-radius:16px;border:1px solid var(--line);font-size:14px;color:var(--ink)}
+.addj:hover{background:var(--surface)}.addj svg.i{width:14px;height:14px;stroke-width:2}
+.bby{display:inline-flex;margin:-8px 0 16px}
+.kc .ft .acc{color:var(--accent)}
+.scount{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:14px}
+.scount button{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:12px 14px;border-radius:12px;background:var(--surface);border:1px solid transparent;text-align:left;transition:background .15s,border-color .15s}
+.scount button:not(:disabled):hover{background:var(--surface2)}
+.scount b{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}.scount span{font-size:13px;color:var(--muted)}
+.scount .zero{cursor:default}.scount .zero b,.scount .zero span{color:var(--faint)}
+.scount .on{border-color:rgba(180,188,255,.5);background:rgba(180,188,255,.08)}.scount .on span{color:var(--accent)}
+@media (max-width:560px){.scount{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.mini{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none}
+.mdots{display:flex;align-items:center}.mdots i{width:16px;height:1.5px;background:rgba(180,188,255,.4)}
+.mdots b{width:7px;height:7px;border-radius:50%;background:rgba(180,188,255,.5)}.mdots b.cur{width:9px;height:9px;background:var(--accent);box-shadow:0 0 0 3px rgba(180,188,255,.18)}
+.mdots b.fut{background:none;border:1.3px solid var(--faint);box-sizing:border-box}
+.mlab{font-size:12.6px;color:var(--accent);white-space:nowrap}
+.steps{margin-top:22px;padding:22px 16px 16px;border-radius:16px;background:var(--surface)}
+.strack{overflow-x:auto;scrollbar-width:none}.strack>div{display:grid;min-width:min-content}
+.sd{display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center;padding:0 0 4px}
+.sd .ln{display:flex;align-items:center;width:100%;height:16px}.sd .ln i{flex:1;height:1.5px}.sd .ln i.s{background:rgba(180,188,255,.5)}.sd .ln i.g{background:rgba(255,255,255,.1)}
+.sd .d{width:10px;height:10px;border-radius:50%;flex:none;background:rgba(180,188,255,.55);transition:transform .2s}
+.sd.cur .d{width:12px;height:12px;background:var(--accent);box-shadow:0 0 0 5px rgba(180,188,255,.18)}
+.sd.up .d{background:var(--bg);border:1.5px solid var(--s-interview);box-sizing:border-box}
+.sd.fut .d{background:none;border:1.5px dashed var(--faint);box-sizing:border-box}
+.sd.bad .d{background:var(--s-closed)}
+button.sd:hover .d{transform:scale(1.3)}
+button.sd.on:not(.cur) .d{outline:2px solid rgba(237,237,239,.6);outline-offset:3px}
+.sd .n{font-size:13.8px;font-weight:500;color:var(--muted)}.sd.on .n{color:var(--ink);font-weight:600}.sd.fut .n{color:var(--faint)}.sd.bad .n{color:var(--s-closed)}
+.sd small{font-size:12.1px;color:var(--faint);min-height:15px}
+.sdet{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+.sdh{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;font-size:14.4px;color:var(--muted)}.sdh b{color:var(--ink);font-weight:600}.sdh .link{margin-left:auto;font-size:14px}
+.sdi{display:flex;align-items:center;gap:12px;padding:6px 0;font-size:14.6px}.sdi .d{width:52px;flex:none;font-size:13.2px;color:var(--faint)}.sdi .x{flex:1;min-width:0}.sdi .link{font-size:13.8px}
+.sbtn.xs{width:26px;height:26px;border:0}.sbtn.xs svg.i{width:13px;height:13px}
+.actt{margin-top:22px}.jlink{display:inline-block;margin-top:14px;font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{height:34px;padding:0 13px;border-radius:17px;border:1px solid var(--line);color:var(--muted);font-size:14px}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:rgba(180,188,255,.1);color:var(--ink)}
+.flab{font-size:13.2px;color:var(--faint);margin-bottom:7px}
+.edf .two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}@media (max-width:480px){.edf .two{grid-template-columns:1fr}}
+.edf .hint{font-size:12.6px;color:var(--faint)}
+.link.danger{color:var(--s-closed);align-self:flex-start;font-size:14px}
 </style></head>
 <body>
 <div class="app">

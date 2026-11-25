@@ -7,10 +7,13 @@ const J = require('./_lib/jobops');
 const { hasKey } = require('./_lib/ai');
 
 const STATUSES = ['saved', 'applied', 'interview', 'offer', 'closed'];
-const out = j => ({ id: j.id, co: j.co, role: j.role, src: j.src, status: j.status, applied: j.applied ? iso(j.applied) : null, firstReply: j.first_reply ? iso(j.first_reply) : null, next: j.next_raw, tl: j.tl });
+const STEP_T = ['applied', 'hr', 'test', 'manager', 'references', 'offer', '-'];
+const cleanLink = s => { s = String(s || '').trim().slice(0, 500); return /^https?:\/\/[^\s]+$/i.test(s) ? s : ''; };
+const cleanContact = s => { s = String(s || '').trim().toLowerCase().replace(/^@/, '').slice(0, 120); return /^([^\s@]+@)?[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(s) ? s : ''; };
+const out = j => ({ id: j.id, co: j.co, role: j.role, src: j.src, status: j.status, applied: j.applied ? iso(j.applied) : null, firstReply: j.first_reply ? iso(j.first_reply) : null, next: j.next_raw, tl: j.tl, link: j.link || '', contact: j.contact || '' });
 function iso(d) { if (typeof d === 'string') return d.slice(0, 10); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 const cleanTl = tl => Array.isArray(tl) ? tl.slice(0, 60).filter(e => Array.isArray(e) && typeof e[0] === 'string' && typeof e[1] === 'string')
-  .map(e => { const x = [e[0].slice(0, 20), e[1].slice(0, 120)]; if (e[2] && typeof e[2] === 'object') { const m = { s: String(e[2].s || '').slice(0, 20), id: String(e[2].id || '').slice(0, 200) }; if (+e[2].f > 0) m.f = Math.min(99, +e[2].f); x.push(m); } return x; }) : null;
+  .map(e => { const x = [e[0].slice(0, 20), e[1].slice(0, 120)]; if (e[2] && typeof e[2] === 'object') { const m = { s: String(e[2].s || '').slice(0, 20), id: String(e[2].id || '').slice(0, 200) }; if (+e[2].f > 0) m.f = Math.min(99, +e[2].f); if (STEP_T.includes(e[2].t)) m.t = e[2].t; x.push(m); } return x; }) : null;
 
 async function hasBackup(uid) { const { rows } = await q('select 1 from jobs_backup where user_id=$1 limit 1', [uid]); return !!rows[0]; }
 
@@ -73,8 +76,8 @@ module.exports = A.handle(async (req, res) => {
       await q('update users set watch_v=2 where id=$1', [user.id]); // try once; the daily renewal covers a failure
     }
     // Lists read with the older rules: re-read Gmail once with the new privacy rules (old list kept in jobs_backup).
-    if (user.refresh_enc && user.reread_v < 2 && !user.import_state && hasKey()) {
-      await q('update users set reread_v=2 where id=$1', [user.id]);
+    if (user.refresh_enc && user.reread_v < 3 && !user.import_state && hasKey()) {
+      await q('update users set reread_v=3 where id=$1', [user.id]);
       await S.rebuild(user, 180); user.import_state = {};
     }
     const v = await version(user.id);
@@ -94,10 +97,26 @@ module.exports = A.handle(async (req, res) => {
     if (!rowCount) throw err(404, 'Job not found.');
     return res.status(200).json({ ok: true, v: await version(user.id) });
   }
+  if (b.op === 'add') {
+    // A job you add by hand. Its email address (or domain) is watched, so its emails join it.
+    const co = String(b.co || '').trim().slice(0, 80), role = String(b.role || '').trim().slice(0, 120) || 'Role not named';
+    if (!co) throw err(400, 'Company is needed.');
+    if (!STATUSES.includes(b.status)) throw err(400, 'Pick a status.');
+    if (b.contact && !cleanContact(b.contact)) throw err(400, 'That email address looks wrong.');
+    const day = typeof b.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.day) ? b.day : new Date().toISOString().slice(0, 10);
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const lab = `${MON[+day.slice(5, 7) - 1]} ${+day.slice(8, 10)}`;
+    const tl = [[lab, 'Added by you', { s: 'you', id: '' }]];
+    if (b.status === 'interview' && STEP_T.includes(b.step) && b.step !== '-') tl.unshift([lab, String(b.stepText || '').slice(0, 60) || 'Step', { s: 'you', id: '', t: b.step }]);
+    const { rows } = await q(`insert into jobs (user_id, co, role, src, status, applied, link, contact, tl) values ($1,$2,$3,'Manual',$4,$5,$6,$7,$8) returning id`,
+      [user.id, co, role, b.status, b.status === 'saved' ? null : day, cleanLink(b.link) || null, cleanContact(b.contact) || null, JSON.stringify(tl)]);
+    return res.status(200).json({ ok: true, id: rows[0].id, v: await version(user.id) });
+  }
   if (b.op === 'edit') {
     const co = String(b.co || '').trim().slice(0, 80), role = String(b.role || '').trim().slice(0, 120);
     if (!co) throw err(400, 'Company is needed.');
-    const { rowCount } = await q('update jobs set co=$3, role=$4, updated_at=now() where id=$1 and user_id=$2', [+b.id, user.id, co, role]);
+    if (b.contact && !cleanContact(b.contact)) throw err(400, 'That email address looks wrong.');
+    const { rowCount } = await q('update jobs set co=$3, role=$4, link=$5, contact=$6, updated_at=now() where id=$1 and user_id=$2', [+b.id, user.id, co, role, cleanLink(b.link) || null, cleanContact(b.contact) || null]);
     if (!rowCount) throw err(404, 'Job not found.');
     return res.status(200).json({ ok: true, v: await version(user.id) });
   }

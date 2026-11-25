@@ -59,6 +59,8 @@ create table if not exists seen (
 );
 alter table users add column if not exists close_days int not null default 16;
 alter table users add column if not exists reread_v int not null default 1;
+alter table jobs add column if not exists link text;
+alter table jobs add column if not exists contact text;
 alter table users add column if not exists watch_v int not null default 1;
 create table if not exists ai_log (
   id serial primary key,

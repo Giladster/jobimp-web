@@ -50,7 +50,7 @@ function pickJob(jobs, co, role) {
   return (r && same.find(j => norm(j.role) === r || norm(j.role).includes(r) || r.includes(norm(j.role)))) || same.find(j => j.status !== 'closed') || same[0];
 }
 const SENT_KINDS = ['submitted', 'followup', 'replied'];
-const SLABEL = { saved: 'Saved', applied: 'Awaiting reply', interview: 'Interview', offer: 'Offer', closed: 'Closed' };
+const SLABEL = { saved: 'Saved', applied: 'Waiting', interview: 'In process', offer: 'Offer', closed: 'Closed' };
 const STATUS_OF = { applied: 'applied', invited: 'interview', scheduled: 'interview', assignment: 'interview', update: 'interview', rejected: 'closed', offer: 'offer' };
 
 /* ---------- apply one event to the jobs table ---------- */
@@ -60,7 +60,8 @@ async function applyEvent(user, ev, jobs) {
   const day = isoDay(ev.date, tz), lab = label(ev.date, tz);
   const note = (ev.note || '').trim().slice(0, 60) || 'Update';
   const meta = { s: ev.src, id: ev.extId }; if (ev.nfiles) meta.f = ev.nfiles;
-  let j = findJob(jobs, ev.company, ev.role);
+  if (ev.step) meta.t = ev.step === 'none' ? '-' : ev.step; // hiring stage, for the step line
+  let j = (ev.jobId && jobs.find(x => x.id === ev.jobId)) || findJob(jobs, ev.company, ev.role);
   const mine = ev.sent || SENT_KINDS.includes(ev.kind);
   if (!j) {
     if (ev.kind === 'none' || ev.kind === 'update' || (mine && ev.kind !== 'applied')) return null;
@@ -153,8 +154,11 @@ async function classifyAndApply(user, items) {
   const results = (await pool(batches, 3, b => classify(b, known))).flat();
   results.sort((a, b) => a.date - b.date);
   let n = 0; const logs = [];
+  const byContact = contactMatcher(jobs);
   for (const r of results) {
     if (r.sent && !['applied', ...SENT_KINDS, 'none'].includes(r.kind)) r.kind = 'none';
+    const cj = byContact(r.sent ? `${r.to || ''} ${r.cc || ''}` : r.from);
+    if (cj && r.job_related) { r.company = cj.co; r.jobId = cj.id; }
     // Plain words for the email log in Settings.
     let did = 'Skipped: not about a job application';
     if (r.job_related && !r.company) did = "Skipped: couldn't tell which company";
@@ -177,6 +181,15 @@ async function classifyAndApply(user, items) {
   const th = [...new Set(results.filter(r => r.threadId && r.job_related && r.company).map(r => r.threadId))];
   if (th.length) await q('insert into job_threads (user_id, thread_id) select $1, unnest($2::text[]) on conflict do nothing', [user.id, th]);
   return n;
+}
+// A job added by hand can name an email address (or a whole domain) to watch.
+function contactMatcher(jobs) {
+  const list = jobs.filter(j => !j.removed && j.contact).map(j => [String(j.contact).toLowerCase().replace(/^@/, ''), j]);
+  return s => {
+    const t = String(s || '').toLowerCase(), domains = [...t.matchAll(/@([a-z0-9.-]+)/g)].map(m => m[1]);
+    const hit = list.find(([c]) => c.includes('@') ? t.includes(c) : domains.some(d => d === c || d.endsWith('.' + c)));
+    return hit ? hit[1] : null;
+  };
 }
 async function writeLog(user, rows) {
   if (!rows.length) return;
@@ -205,13 +218,14 @@ async function processMessages(user, ids, matched) {
     const heads = (await pool(mine, 5, id => getMeta(user, id).catch(e => (e.status === 404 ? null : Promise.reject(e))))).filter(Boolean);
     const jobs = await loadJobs(user), known = jobs.filter(j => !j.removed).map(j => norm(j.co)).filter(n => n.length > 2);
     const threads = await jobThreads(user, jobs);
-    const hits = s => { const t = norm(String(s).replace(/@/g, ' ')); return known.some(n => t.includes(n)); };
+    const byContact = contactMatcher(jobs);
+    const hits = s => { const t = norm(String(s).replace(/@/g, ' ')); return known.some(n => t.includes(n)) || !!byContact(s); };
     const isSent = m => m.labels.includes('SENT');
     const keep = heads.filter(m => !m.labels.some(l => SKIP_LABELS.includes(l)) && (isSent(m)
       ? threads.has(m.threadId) || hits(m.to + ' ' + m.cc)
       : !SKIP_FROM.test(m.from) && (matched?.has(m.id) || threads.has(m.threadId) || hits(m.from) || JOBBY.test(m.subject))));
     const msgs = (await pool(keep, 5, m => getMessage(user, m.id).catch(e => (e.status === 404 ? null : Promise.reject(e))))).filter(Boolean);
-    const items = msgs.map(m => ({ type: 'email', src: 'gmail', sent: isSent(m), extId: m.id, threadId: m.threadId, date: m.at, from: m.from, to: m.to, subject: m.subject, text: m.text,
+    const items = msgs.map(m => ({ type: 'email', src: 'gmail', sent: isSent(m), extId: m.id, threadId: m.threadId, date: m.at, from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: m.text,
       files: m.files.map(f => f.name).join(', '), nfiles: m.files.length }));
     return await classifyAndApply(user, items);
   } catch (e) { await unclaim(user, 'gmail', mine); throw e; }
@@ -358,7 +372,7 @@ async function startWatches(user, base) {
 async function rebuild(user, days = 180) {
   const { rows } = await q('select * from jobs where user_id=$1 order by id', [user.id]);
   await q('insert into jobs_backup (user_id, data) values ($1, $2)', [user.id, JSON.stringify(rows)]);
-  await q('delete from jobs where user_id=$1', [user.id]);
+  await q("delete from jobs where user_id=$1 and src <> 'Manual'", [user.id]); // jobs you added by hand stay
   await q('delete from seen where user_id=$1', [user.id]);
   await q('delete from ai_log where user_id=$1', [user.id]);
   await q('delete from job_threads where user_id=$1', [user.id]);
