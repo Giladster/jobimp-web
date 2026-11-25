@@ -4,7 +4,7 @@ const { z } = require('zod');
 
 const MODEL = 'claude-opus-5-5';
 const KINDS = ['applied', 'invited', 'scheduled', 'assignment', 'rejected', 'offer', 'update', 'submitted', 'followup', 'replied', 'none'];
-const STEPS = ['applied', 'hr', 'test', 'manager', 'references', 'offer', 'none'];
+const STEPS = ['applied', 'hr', 'test', 'present', 'manager', 'references', 'offer', 'none'];
 
 const Result = z.object({
   items: z.array(z.object({
@@ -27,7 +27,7 @@ For each item return:
 - role: the job title if stated, else "".
 - kind: applied (application received or sent) | invited (asked to interview or to book a time) | scheduled (an interview with a set time) | assignment (home task) | rejected | offer | update (other real progress) | none.
   For items marked "sent by the user" (emails the user wrote): applied (the user applied by email) | submitted (the user sent a home assignment or requested files) | followup (the user followed up or asked about the process) | replied (the user answered the company, e.g. confirmed a time) | none. The company is the one the user wrote to.
-- step: which stage of the hiring process this item is part of. applied (the application) | hr (a call or interview with a recruiter, HR or talent person, or a first intro call) | test (home assignment, technical or coding test, exercise, case study, including the user sending it back) | manager (an interview with the hiring manager, team lead, team members, peers, founders or executives, a meeting to present the user's assignment, or any later interview round) | references (reference checks) | offer (an offer or salary talk) | none (reminders, reschedules, cancellations, plain confirmations, follow-ups, rejections, and anything else that is not a stage itself).
+- step: which stage of the hiring process this item is part of. applied (the application) | hr (a call or interview with a recruiter, HR or talent person, or a first intro call) | test (getting, doing or sending back a home assignment, a technical or coding test, exercise or case study, including a test done live or in person) | present (a meeting where the user presents their assignment, or a sales or role-play simulation based on it; read the context: a meeting after a task is often a presentation, but it can also be a live test or a normal interview) | manager (an interview with the hiring manager, team lead, team members, peers, founders or executives, or any later interview round) | references (reference checks) | offer (an offer or salary talk) | none (reminders, reschedules, cancellations, plain confirmations, follow-ups, rejections, and anything else that is not a stage itself).
 - interview_at: the interview start as local time "YYYY-MM-DDTHH:MM" if the item states a specific date and time, else null.
 - note: what happened, in English, 2 to 6 words, starting with a capital letter, e.g. "Invited to interview", "Rejected by email", "Home assignment", "Applied", "Interview set". For sent emails start with "You", e.g. "You sent the home assignment", "You followed up", "You confirmed the time". No company name.
 - why: one short, plain sentence a non-technical user understands, naming the clue you used. E.g. "The invite came from scaleops.com and sets an interview time." or "A Google Docs share request, not about a job." No jargon. Never mention Claude, AI or yourself.

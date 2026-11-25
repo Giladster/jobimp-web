@@ -8,7 +8,7 @@ const { hasKey } = require('./_lib/ai');
 const ST = require('./_lib/steps');
 
 const STATUSES = ['saved', 'applied', 'interview', 'offer', 'closed'];
-const STEP_T = ['applied', 'hr', 'test', 'manager', 'references', 'offer', '-'];
+const STEP_T = ['applied', 'hr', 'test', 'present', 'manager', 'references', 'offer', '-'];
 const cleanLink = s => { s = String(s || '').trim().slice(0, 500); return /^https?:\/\/[^\s]+$/i.test(s) ? s : ''; };
 const cleanContact = s => { s = String(s || '').trim().toLowerCase().replace(/^@/, '').slice(0, 120); return /^([^\s@]+@)?[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(s) ? s : ''; };
 const out = j => ({ id: j.id, co: j.co, role: j.role, src: j.src, status: j.status, applied: j.applied ? iso(j.applied) : null, firstReply: j.first_reply ? iso(j.first_reply) : null, next: j.next_raw, tl: j.tl, link: j.link || '', contact: j.contact || '' });
@@ -70,6 +70,8 @@ module.exports = A.handle(async (req, res) => {
       const { rows: c } = await q('select count(*)::int as n from ai_log where user_id=$1', [user.id]);
       return res.status(200).json({ log: rows, total: c[0].n });
     }
+    // One time: Claude orders every job's steps again (the Presentation step is new).
+    if (user.steps_v < 2) { await q('update jobs set steps_at=null where user_id=$1', [user.id]); await q('update users set steps_v=2 where id=$1', [user.id]); user.steps_v = 2; }
     // A rejection always wins over "no news", for old and new jobs alike.
     try { await S.rejectWins(user); } catch (e) { console.error('reject rule failed', e.message); }
     try { await S.autoClose(user); } catch (e) { console.error('auto close failed', e.message); }
@@ -80,7 +82,7 @@ module.exports = A.handle(async (req, res) => {
     }
     // One time: a job the company already answered (an HR call, test, interview...) is In process, not Applied.
     if (user.reread_v === 3 && !user.import_state) {
-      await q(`update jobs set status='interview', updated_at=now() where user_id=$1 and status='applied' and exists (select 1 from jsonb_array_elements(tl) e where e->2->>'t' in ('hr','test','manager','references','offer'))`, [user.id]);
+      await q(`update jobs set status='interview', updated_at=now() where user_id=$1 and status='applied' and exists (select 1 from jsonb_array_elements(tl) e where e->2->>'t' in ('hr','test','present','manager','references','offer'))`, [user.id]);
       await q('update users set reread_v=4 where id=$1', [user.id]); user.reread_v = 4;
     }
     // Lists read with the older rules: re-read Gmail once with the new privacy rules (old list kept in jobs_backup).

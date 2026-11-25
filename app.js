@@ -180,21 +180,21 @@ $('#page').addEventListener('click',e=>{
 });
 
 /* hiring steps: each timeline entry belongs to one stage. The Agent sets it; older entries are guessed from their text. */
-const STEPS=['applied','hr','test','manager','references','offer'],BSTEPS=['hr','test','manager','references','offer'];
-const STEPL={applied:'Applied',hr:'HR call',test:'Test',manager:'Manager',references:'References',offer:'Offer'};
+const STEPS=['applied','hr','test','present','manager','references','offer'],BSTEPS=['hr','test','present','manager','references','offer'];
+const STEPL={applied:'Applied',hr:'HR call',test:'Test',present:'Presentation',manager:'Manager',references:'References',offer:'Offer'};
 const APP_LINE=/^(Moved to |Closed|Saved for later|Added |Role changed|Company changed)/;
 function guessStep(x){x=String(x);
   if(APP_LINE.test(x)||/cancel|reschedul|remind|moved|confirm|shared|follow|thank|declin|withdr|replied|answer|asked|reject|unfortunately|no news|\bnot\b/i.test(x))return null;
   if(/offer|salary/i.test(x))return 'offer';
   if(/referen/i.test(x))return 'references';
+  if(/presentation|simulation/i.test(x))return 'present';
   if(/assignment|home ?task|\btest|exercise|case study|homework|quiz|coding|technical/i.test(x))return 'test';
   if(/\bhr\b|recruit|screen|intro|first call|talent|phone/i.test(x))return 'hr';
   if(/manager|team|lead\b|founder|ceo|cto|vp\b|director|final/i.test(x))return 'manager';
   if(/interview|invited|meeting|\bcall\b|on-?site|round/i.test(x))return '?';
   if(/^(you )?appl/i.test(x))return 'applied';
   return null}
-// Presenting the assignment in a meeting is an interview, not part of the test.
-const stepOf=t=>{const m=t[2];let s=m?.t?(m.t==='-'?null:m.t):guessStep(t[1]);if(s==='test'&&/present/i.test(t[1]))s='manager';return s};
+const stepOf=t=>{const m=t[2];if(m?.t)return m.t==='-'?null:m.t;return guessStep(t[1])};
 const dlab=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
 // Group the timeline into steps, oldest first. Repeats in a row join one step ("Manager ×3"); small updates ride along with the step before them.
 function jobSteps(j){
@@ -247,13 +247,16 @@ function editStep(j,k){
   $('#spSave').onclick=()=>{tl[k]=readStep(t);sortTl(j);if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Saved')};
   $('#spDel').onclick=()=>{tl.splice(k,1);if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Step removed')};
 }
-// A whole step: change its type, or remove it (and everything under it).
+// A whole step (a dot on the timeline): change its name or date, or remove it with everything under it.
 function editGroup(j,i){
   const x=jobSteps(j)[i];if(!x)return;const tl=j.tl0||j.tl;
-  openModal(`Edit ${x.name} step`,`<div class="edf"><label>Step<select id="sgT">${STEPS.map(v=>`<option value="${v}"${v===x.s?' selected':''}>${STEPL[v]}</option>`).join('')}</select></label>
-    <div class="hint">Changes all ${x.items.length} items in this step. Use the pencil on a single item to change its name or date.</div>
+  openModal('Edit step',`<div class="edf"><label>Step<select id="sgT">${STEPS.map(v=>`<option value="${v}"${v===x.s?' selected':''}>${STEPL[v]}</option>`).join('')}</select></label>
+    <label>Date<input id="sgD" type="date" value="${localIso(x.start)}"></label>
+    <div class="hint">${x.items.length>1?`Changes all ${x.items.length} emails and invites in this step.`:'Changes the email or invite in this step.'}</div>
     <button class="pbtn pri" id="sgSave">Save</button><button class="link danger" id="sgDel">Remove this step</button></div>`);
-  $('#sgSave').onclick=()=>{const v=$('#sgT').value;x.items.forEach(e=>{const t=tl[e.k];if(t&&stepOf(t)){t[2]={...(t[2]||{s:'you',id:''}),t:v};if(t[2].s!=='you')t[2].u=1}});if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Saved')};
+  $('#sgSave').onclick=()=>{const v=$('#sgT').value,d=$('#sgD').value,moved=d&&d!==localIso(x.start);
+    x.items.forEach(e=>{const t=tl[e.k];if(!t||!stepOf(t))return;const m=t[2]={...(t[2]||{s:'you',id:''}),t:v};if(m.s!=='you')m.u=1;if(moved){if(m.s==='you')t[0]=dlab(new Date(d+'T00:00:00'));else m.d=d}});
+    if(moved)sortTl(j);if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Saved')};
   $('#sgDel').onclick=()=>{const ks=new Set(x.items.map(e=>e.k));const keep=tl.filter((t,k)=>!ks.has(k));tl.length=0;tl.push(...keep);if(!REAL)j.tl=tl;stepSel={id:j.id,i:null};closeModal();afterStepEdit(j,'Step removed')};
 }
 // Board "by step": dragging a card moves the job to that step today ("Moved to X by you").
@@ -310,22 +313,28 @@ function editJob(){
 }
 
 /* job page */
-let actOpen=false,stepSel={id:null,i:null};
+let actOpen=false,stepSel={id:null,i:null},stepList=false; // stepList: false (closed) | 'all' | 'one' (the tapped step)
 // The step line: main steps left to right. Tap (or hover) a dot to see its emails and invites.
 function stepsBox(j){
   const g=jobSteps(j),c=curIdx(g);
-  if(stepSel.id!==j.id||stepSel.i==null||stepSel.i>=g.length)stepSel={id:j.id,i:c>=0?c:null};
+  if(stepSel.id!==j.id||stepSel.i==null||stepSel.i>=g.length){stepSel={id:j.id,i:c>=0?c:null};if(stepList==='one')stepList=false}
   const end=j.status==='closed'?{name:closedWhy(j)||'Closed',cls:'bad'}:j.status==='offer'&&!g.some(x=>x.s==='offer')?{name:'Offer',cls:'cur'}:j.status==='saved'?null:{name:'Next',cls:'fut'};
-  const n=g.length+(end?1:0);
-  const dots=g.map((x,i)=>`<button class="sd${i===c?' cur':''}${x.fut?' up':''}${i===stepSel.i?' on':''}" data-si="${i}" title="${esc(x.name+' · '+x.date)}" aria-pressed="${i===stepSel.i}"><span class="ln"><i class="${i?i<=c?'s':'g':''}"></i><span class="d"></span><i class="${i<n-1?i<c?'s':'g':''}"></i></span><span class="n">${esc(x.name)}</span><small>${esc(x.date)}</small></button>`).join('')
-    +(end?`<div class="sd ${end.cls} endm"><span class="ln"><i class="${g.length?'g':''}"></i><span class="d"></span><i></i></span><span class="n">${esc(end.name)}</span><small></small></div>`:'');
-  // Every step with its emails, under its own header. Tapping a dot jumps to that step.
+  const n=g.length+1+(end?1:0); // steps, the "+", the end
+  const ln=(i,first)=>`<span class="ln"><i class="${first?'':i<=c?'s':'g'}"></i><span class="d"></span><i class="${i<n-1?i<c?'s':'g':''}"></i></span>`;
+  const dots=g.map((x,i)=>`<div class="sdw${i===stepSel.i&&stepList?' on':''}"><button class="sd${i===c?' cur':''}${x.fut?' up':''}${i===stepSel.i&&stepList?' on':''}" data-si="${i}" aria-label="${esc(x.name+', '+x.date)}: show its emails and invites">${ln(i,!i)}<span class="n">${esc(x.name)}</span><small>${esc(x.date)}</small></button><button class="sbtn xs sdp" data-edgrp="${i}" title="Edit this step" aria-label="Edit the ${esc(x.name)} step">${I(IC_EDIT)}</button></div>`).join('')
+    +`<div class="sdw"><button class="sd add" data-addstep title="Add a step" aria-label="Add a step"><span class="ln"><i class="${g.length?'g':''}"></i><span class="d">+</span><i class="${end?'g':''}"></i></span><span class="n">Add</span><small></small></button></div>`
+    +(end?`<div class="sdw"><div class="sd ${end.cls} endm"><span class="ln"><i class="g"></i><span class="d"></span><i></i></span><span class="n">${esc(end.name)}</span><small></small></div></div>`:'');
+  const cols=[...g.map(()=>'minmax(96px,1fr)'),'64px',...(end?['minmax(96px,1fr)']:[])].join(' ');
+  // Emails and invites behind each step. Closed at first; tapping a step shows just that step's.
   const row=e=>{const t=e.t,tap=stepTap(t[1],t[2]);return`<div class="sdi"><span class="d">${esc(t[0])}</span><span class="x">${esc(t[1])}${t[2]?.f?`<span class="clip">${I(IC_CLIP)}</span>`:''}</span>${tap?`<button class="link" data-step="${e.k}">${t[2]?.s==='calendar'?'Invite':'Email'} ›</button>`:''}<button class="sbtn xs" data-edstep="${e.k}" title="Edit" aria-label="Edit this item">${I(IC_EDIT)}</button></div>`};
-  const det=g.length?`<div class="sdtop"><button class="link" data-addstep>+ Add step</button></div>`+g.map((x,i)=>`<div class="sdg${i===stepSel.i?' on':''}" id="sdg${i}"><div class="sdh"><b>${esc(x.name)}</b><span>${esc(x.date)}</span><button class="sbtn xs" data-edgrp="${i}" title="Edit this step" aria-label="Edit the ${esc(x.name)} step">${I(IC_EDIT)}</button></div>${x.items.map(row).join('')}</div>`).join('')
-    :`<div class="sdh"><span>No steps yet. They appear as emails and invites come in.</span><button class="link" data-addstep>+ Add step</button></div>`;
-  return `<div class="steps"><div class="strack"><div style="grid-template-columns:repeat(${Math.max(n,1)},minmax(96px,1fr))">${dots}</div></div><div class="sdet">${det}</div></div>`;
+  const grp=(x,i)=>`<div class="sdg${i===stepSel.i&&stepList==='all'?' on':''}" id="sdg${i}"><div class="sdh"><b>${esc(x.name)}</b><span>${esc(x.date)}</span></div>${x.items.map(row).join('')}</div>`;
+  const total=g.reduce((a,x)=>a+x.items.length,0),one=stepList==='one'&&g[stepSel.i];
+  const det=!g.length?`<div class="sdh"><span>No steps yet. They appear as emails and invites come in, or tap + to add one.</span></div>`
+    :`<div class="sdtog"><button class="link" data-slist="${stepList?'close':'all'}" aria-expanded="${!!stepList}">${stepList?(one?`${esc(one.name)}: emails and invites`:'All emails and invites'):`Emails and invites (${total})`} <span class="chev${stepList?' up':''}">›</span></button>${one?`<button class="link" data-slist="all">Show all steps</button>`:''}</div>
+      <div class="coll${stepList?' open':''}"><div>${stepList?(one?grp(one,stepSel.i):g.map(grp).join('')):''}</div></div>`;
+  return `<div class="steps"><div class="strack"><div style="grid-template-columns:${cols}">${dots}</div></div><div class="sdet">${det}</div></div>`;
 }
-function openJob(id){const j=jobs.find(x=>x.id===id);if(!j)return;curJob=j;actOpen=false;show('job');openAgentMobile(false)}
+function openJob(id){const j=jobs.find(x=>x.id===id);if(!j)return;curJob=j;actOpen=false;stepList=false;show('job');openAgentMobile(false)}
 function renderJob(){
   const j=curJob;let n;
   if(REAL)n=realNudge(j);
@@ -358,7 +367,8 @@ $('#page').addEventListener('click',e=>{
   if(e.target.closest('[data-back]')){show('jobs');return}
   if(e.target.closest('[data-edit]')){editJob();return}
   const st=e.target.closest('[data-step]');if(st){openStep(curJob,+st.dataset.step);return}
-  const si=e.target.closest('[data-si]');if(si){stepSel={id:curJob.id,i:+si.dataset.si};renderJob();$('#sdg'+si.dataset.si)?.scrollIntoView({behavior:'smooth',block:'nearest'});return}
+  const si=e.target.closest('[data-si]');if(si){const i=+si.dataset.si;stepList=stepList==='one'&&stepSel.i===i?false:'one';stepSel={id:curJob.id,i};renderJob();return}
+  const sl=e.target.closest('[data-slist]');if(sl){stepList=sl.dataset.slist==='close'?false:'all';renderJob();return}
   const eg=e.target.closest('[data-edgrp]');if(eg){editGroup(curJob,+eg.dataset.edgrp);return}
   if(e.target.closest('[data-addstep]')){addStep(curJob);return}
   const es=e.target.closest('[data-edstep]');if(es){editStep(curJob,+es.dataset.edstep);return}
@@ -751,7 +761,7 @@ function weekEvents(){
   const end=new Date(TODAY.getTime()+7*DAY),out=[];
   jobs.forEach(j=>{const at=parseNext(j.nextRaw);if(!at||at<TODAY||at>=end||j.status==='closed')return;
     const t=(j.tl0||j.tl).find(x=>/\(coming up\)/.test(x[1]));const s=t&&stepOf(t);
-    out.push({j,at,what:s&&STEPL[s]&&s!=='applied'?STEPL[s]+(s==='test'?'':' interview'):'Interview'})});
+    out.push({j,at,what:s&&STEPL[s]&&s!=='applied'?STEPL[s]+(s==='test'||s==='present'?'':' interview'):'Interview'})});
   return out.sort((a,b)=>a.at-b.at);
 }
 function nextAfterWeek(){
