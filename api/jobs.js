@@ -75,6 +75,11 @@ module.exports = A.handle(async (req, res) => {
       try { await S.startWatches(user, user.push_base || G.baseUrl(req)); } catch (e) { console.error('watch upgrade failed', e.message); }
       await q('update users set watch_v=2 where id=$1', [user.id]); // try once; the daily renewal covers a failure
     }
+    // One time: a job the company already answered (an HR call, test, interview...) is In process, not Applied.
+    if (user.reread_v === 3 && !user.import_state) {
+      await q(`update jobs set status='interview', updated_at=now() where user_id=$1 and status='applied' and exists (select 1 from jsonb_array_elements(tl) e where e->2->>'t' in ('hr','test','manager','references','offer'))`, [user.id]);
+      await q('update users set reread_v=4 where id=$1', [user.id]); user.reread_v = 4;
+    }
     // Lists read with the older rules: re-read Gmail once with the new privacy rules (old list kept in jobs_backup).
     if (user.refresh_enc && user.reread_v < 3 && !user.import_state && hasKey()) {
       await q('update users set reread_v=3 where id=$1', [user.id]);

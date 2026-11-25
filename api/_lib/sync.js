@@ -50,7 +50,7 @@ function pickJob(jobs, co, role) {
   return (r && same.find(j => norm(j.role) === r || norm(j.role).includes(r) || r.includes(norm(j.role)))) || same.find(j => j.status !== 'closed') || same[0];
 }
 const SENT_KINDS = ['submitted', 'followup', 'replied'];
-const SLABEL = { saved: 'Saved', applied: 'Waiting', interview: 'In process', offer: 'Offer', closed: 'Closed' };
+const SLABEL = { saved: 'Saved', applied: 'Applied', interview: 'In process', offer: 'Offer', closed: 'Closed' };
 const STATUS_OF = { applied: 'applied', invited: 'interview', scheduled: 'interview', assignment: 'interview', update: 'interview', rejected: 'closed', offer: 'offer' };
 
 /* ---------- apply one event to the jobs table ---------- */

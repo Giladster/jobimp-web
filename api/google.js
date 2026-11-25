@@ -48,7 +48,7 @@ async function connect(req, res) {
   if (!refresh) return to('/?google=failed');
   const fresh = !u.refresh_enc || u.google_sub !== g.sub;
   await q(`update users set google_sub=$2, google_email=$3, refresh_enc=$4, import_state=case when $5 then '{"phase":"gmail","n":0,"jobs":0}'::jsonb else import_state end,
-           gmail_history=case when $5 then null else gmail_history end, reread_v=case when $5 then 3 else reread_v end where id=$1`, [uid, g.sub, g.email, refresh, fresh]);
+           gmail_history=case when $5 then null else gmail_history end, reread_v=case when $5 then 4 else reread_v end where id=$1`, [uid, g.sub, g.email, refresh, fresh]);
   const { rows } = await q('select * from users where id=$1', [uid]);
   G.remember(rows[0], g.access, g.exp);
   await S.startWatches(rows[0], base);
