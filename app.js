@@ -256,7 +256,7 @@ function closeModal(){$('#modal').classList.remove('on');if(!$('#agent').classLi
 document.addEventListener('click',e=>{if(e.target.closest('[data-close]'))closeModal()});
 $('#scrim').onclick=()=>{closeModal();openAgentMobile(false)};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();openAgentMobile(false)}
-  if(e.key==='/'&&document.activeElement.tagName!=='INPUT'&&document.activeElement.tagName!=='SELECT'){e.preventDefault();openAgentMobile(true);$('#inp').focus()}});
+  if(e.key==='/'&&document.activeElement.tagName!=='INPUT'&&document.activeElement.tagName!=='SELECT'){e.preventDefault();setCol('r',false);openAgentMobile(true);$('#inp').focus()}});
 
 /* where you stand */
 const MAXD=16,pc=d=>Math.min(d,MAXD)/MAXD*100;
@@ -320,10 +320,23 @@ function intro(sc){
 }
 function setScope(sc){scope=sc;const box=$('#threadBox');box.innerHTML='';box.appendChild(thread(sc));thread(sc).scrollTop=1e5;$('#composer').dataset.scope=sc;renderABar();renderSugg()}
 function modePill(){return REAL?`<button class="amode" data-amode title="Change how the Agent acts">${amode()==='plan'?'Ask first':'Auto'}</button>`:''}
+function aIcons(){return `<div class="aicons"><button class="colb" data-aclear title="Clear chat" aria-label="Clear chat"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/></svg></button><button class="colb" id="rTog" data-rtog title="Collapse the Agent" aria-label="Collapse the Agent"><svg class="i" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>`}
+/* collapse / expand the left menu and the Agent (remembered) */
+function setCol(side,on){$('.app').classList.toggle(side==='l'?'lcol':'rcol',on);store.set('jobimp-col-'+side,on?'1':'');
+  if(side==='l'){const b=$('#lTog');b.title=b.ariaLabel=on?'Expand menu':'Collapse menu';document.querySelectorAll('#nav .nv').forEach(n=>{if(on)n.title=n.textContent.replace(/\d+$/,'').trim();else n.removeAttribute('title')})}}
+function clearChat(sc){
+  openModal('Clear chat?','<div class="t2" style="margin-bottom:18px">This clears the messages in this chat. Your jobs and the Agent log stay as they are.</div><button class="pbtn pri" id="clrGo">Clear</button>');
+  $('#clrGo').onclick=()=>{closeModal();const t=threads[sc];if(t){t.innerHTML='';intro(sc)}hist[sc]=[];for(const k in plans)if(plans[k].sc===sc)delete plans[k];toast('Chat cleared')}}
+document.addEventListener('click',e=>{
+  if(e.target.closest('[data-aclear]'))clearChat(scope);
+  if(e.target.closest('[data-rtog]'))setCol('r',true);
+  if(e.target.closest('#rOpen,#rOpen2'))setCol('r',false);
+  if(e.target.closest('#lTog'))setCol('l',!$('.app').classList.contains('lcol'));
+});
 function renderABar(){
   const j=jobOf(scope);
-  $('#abar').innerHTML=j?`${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)} agent</div><div class="t2">${esc(j.role)} · ${stl(j.status)}</div></div>${modePill()}<button class="home" data-scope-main>Main agent</button><button class="done closeA" data-closeA>Close</button>`
-    :`<div class="av spark">${I(SPARK)}</div><div class="txt"><div class="t1">Agent</div><div class="t2">Knows all your jobs <span class="kbd">/</span></div></div>${modePill()}<button class="done closeA" data-closeA>Close</button>`;
+  $('#abar').innerHTML=j?`${av(j.co)}<div class="txt"><div class="t1">${esc(j.co)} agent</div><div class="t2">${esc(j.role)} · ${stl(j.status)}</div></div>${modePill()}<button class="home" data-scope-main>Main agent</button>${aIcons()}<button class="done closeA" data-closeA>Close</button>`
+    :`<div class="av spark">${I(SPARK)}</div><div class="txt"><div class="t1">Agent</div><div class="t2">Knows all your jobs <span class="kbd">/</span></div></div>${modePill()}${aIcons()}<button class="done closeA" data-closeA>Close</button>`;
 }
 document.addEventListener('click',e=>{
   if(e.target.closest('[data-scope-main]'))setScope('main');
@@ -579,6 +592,7 @@ function startApp(){
   setScope('main');show('today');
 }
 function showLogin(){$('#login').hidden=false;$('#pwColl').classList.remove('open');$('#loginErr').textContent='';$('#gBtn').hidden=!GOOGLE_ON}
+setTimeout(()=>{const app=$('.app');app.style.transition='none';if(store.get('jobimp-col-l'))setCol('l',true);if(store.get('jobimp-col-r'))setCol('r',true);requestAnimationFrame(()=>requestAnimationFrame(()=>app.style.transition=''))},0);
 const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}},del:k=>{try{localStorage.removeItem(k)}catch{}}};
 let GOOGLE_ON=false;
 async function api(path,body){

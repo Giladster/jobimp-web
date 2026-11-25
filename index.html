@@ -20,7 +20,35 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f);font-si
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;letter-spacing:inherit;padding:0}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:1.5px solid var(--accent);outline-offset:2px}
 svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
-.app{display:grid;grid-template-columns:256px minmax(0,1fr) 420px;height:100vh;height:100dvh}
+.app{--lw:256px;--rw:420px;display:grid;grid-template-columns:var(--lw) minmax(0,1fr) var(--rw);height:100vh;height:100dvh;transition:grid-template-columns .34s cubic-bezier(.2,.8,.2,1)}
+.app.lcol{--lw:68px}
+.app.rcol{--rw:56px}
+/* collapse buttons */
+.colb{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:var(--faint);flex:none;transition:color .2s,background .2s}
+.colb:hover{color:var(--ink);background:var(--surface)}
+.colb svg.i{width:16px;height:16px;transition:transform .34s cubic-bezier(.2,.8,.2,1)}
+.lhead{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
+.side,.agent{overflow:hidden}
+.side *{white-space:nowrap}
+.app.lcol .side{padding-left:12px;padding-right:12px}
+.app.lcol .lhead{flex-direction:column;align-items:center}
+.app.lcol .logo{font-size:0;padding:0 0 10px}
+.app.lcol .logo span{font-size:21.8px}
+.app.lcol #lTog svg.i{transform:rotate(180deg)}
+.app.lcol .nv{font-size:0;justify-content:center;padding:9px 0}
+.app.lcol .nv .ct,.app.lcol .nv .dot{display:none}
+.app.lcol .sideh{font-size:0;padding:18px 0 6px;border-bottom:1px solid var(--line);margin:0 8px 8px}
+.app.lcol .sj{justify-content:center;padding:8px 0}
+.app.lcol .sj .nm{display:none}
+.app.lcol .me{justify-content:center;padding:14px 0 0}
+.app.lcol .me>:not(.av){display:none}
+.app.lcol .gsync{font-size:0;justify-content:center}
+/* agent rail when collapsed */
+.arail{display:none;flex-direction:column;align-items:center;gap:10px;padding:20px 0}
+.arail .spark{cursor:pointer}
+@media (min-width:1241px){.app.rcol .agent>:not(.arail){display:none!important}
+.app.rcol .arail{display:flex;animation:fadeIn .3s ease both}}
+.aicons{display:flex;gap:2px;align-items:center}
 
 /* sidebar */
 .side{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:22px 14px;min-height:0}
@@ -281,6 +309,8 @@ svg.chart .vl{fill:var(--ink);font-size:12.6px}
   .agent.open{transform:none}
   .atoggle{display:flex}
   .agent .closeA{display:block}
+  .app.rcol{--rw:0px}
+  .app.rcol .arail,#rTog{display:none}
 }
 .closeA{display:none}
 @media (max-width:760px){
@@ -421,7 +451,8 @@ a.acc{text-decoration:none;color:inherit}
 <body>
 <div class="app">
   <aside class="side">
-    <button class="logo" data-switch title="Switch account">Job<span>Imp</span></button>
+    <div class="lhead"><button class="logo" data-switch title="Switch account">Job<span>Imp</span></button>
+      <button class="colb" id="lTog" title="Collapse menu" aria-label="Collapse menu"><svg class="i" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button></div>
     <nav class="navl" id="nav">
       <button class="nv on" data-v="today"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>Today</button>
       <button class="nv" data-v="alerts"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>Found<span class="ct" id="foundCt"></span></button>
@@ -439,6 +470,8 @@ a.acc{text-decoration:none;color:inherit}
   <main class="main" id="main"><div class="wrap" id="page"></div></main>
 
   <aside class="agent" id="agent">
+    <div class="arail"><button class="colb" id="rOpen" title="Open the Agent" aria-label="Open the Agent"><svg class="i" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <button class="av spark" id="rOpen2" title="Open the Agent" aria-label="Open the Agent"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg></button></div>
     <div class="abar" id="abar"></div>
     <div id="threadBox" style="flex:1;min-height:0;display:flex;flex-direction:column"></div>
     <div class="sugg" id="sugg"></div>
