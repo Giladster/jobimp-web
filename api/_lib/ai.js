@@ -68,4 +68,4 @@ async function classify(items, known) {
   return items.map(x => ({ ...x, ...(byI.get(x.i) || { job_related: false }) }));
 }
 
-module.exports = { classify, hasKey, KINDS, STEPS };
+module.exports = { classify, hasKey, KINDS, STEPS, MODEL };

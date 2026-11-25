@@ -14,7 +14,7 @@ async function merge(user, fromId, intoId) {
   const open = [into, from].filter(j => j.status !== 'closed');
   const status = open.length ? open.sort((a, c) => RANK[c.status] - RANK[a.status])[0].status : 'closed';
   const min = (a, c) => (a && c ? (String(a) < String(c) ? a : c) : a || c || null);
-  await q(`update jobs set tl=$2, status=$3, applied=$4, first_reply=$5, next_raw=$6, role=$7, updated_at=now() where id=$1`,
+  await q(`update jobs set tl=$2, status=$3, applied=$4, first_reply=$5, next_raw=$6, role=$7, steps_at=null, updated_at=now() where id=$1`,
     [into.id, JSON.stringify(tl.slice(0, 60)), status, min(into.applied, from.applied), min(into.first_reply, from.first_reply), into.next_raw || from.next_raw, into.role && into.role !== 'Role not named' ? into.role : from.role]);
   await q('update jobs set removed=true, updated_at=now() where id=$1', [from.id]);
   return { from, into };

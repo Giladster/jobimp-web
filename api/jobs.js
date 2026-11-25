@@ -5,6 +5,7 @@ const G = require('./_lib/google');
 const S = require('./_lib/sync');
 const J = require('./_lib/jobops');
 const { hasKey } = require('./_lib/ai');
+const ST = require('./_lib/steps');
 
 const STATUSES = ['saved', 'applied', 'interview', 'offer', 'closed'];
 const STEP_T = ['applied', 'hr', 'test', 'manager', 'references', 'offer', '-'];
@@ -13,7 +14,7 @@ const cleanContact = s => { s = String(s || '').trim().toLowerCase().replace(/^@
 const out = j => ({ id: j.id, co: j.co, role: j.role, src: j.src, status: j.status, applied: j.applied ? iso(j.applied) : null, firstReply: j.first_reply ? iso(j.first_reply) : null, next: j.next_raw, tl: j.tl, link: j.link || '', contact: j.contact || '' });
 function iso(d) { if (typeof d === 'string') return d.slice(0, 10); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 const cleanTl = tl => Array.isArray(tl) ? tl.slice(0, 60).filter(e => Array.isArray(e) && typeof e[0] === 'string' && typeof e[1] === 'string')
-  .map(e => { const x = [e[0].slice(0, 20), e[1].slice(0, 120)]; if (e[2] && typeof e[2] === 'object') { const m = { s: String(e[2].s || '').slice(0, 20), id: String(e[2].id || '').slice(0, 200) }; if (+e[2].f > 0) m.f = Math.min(99, +e[2].f); if (STEP_T.includes(e[2].t)) m.t = e[2].t; x.push(m); } return x; }) : null;
+  .map(e => { const x = [e[0].slice(0, 20), e[1].slice(0, 120)]; if (e[2] && typeof e[2] === 'object') { const m = { s: String(e[2].s || '').slice(0, 20), id: String(e[2].id || '').slice(0, 200) }; if (+e[2].f > 0) m.f = Math.min(99, +e[2].f); if (STEP_T.includes(e[2].t)) m.t = e[2].t; if (/^\d{4}-\d{2}-\d{2}$/.test(e[2].d)) m.d = e[2].d; if (e[2].u) m.u = 1; x.push(m); } return x; }) : null;
 
 async function hasBackup(uid) { const { rows } = await q('select 1 from jobs_backup where user_id=$1 limit 1', [uid]); return !!rows[0]; }
 
@@ -93,6 +94,7 @@ module.exports = A.handle(async (req, res) => {
     return res.status(200).json({
       v, name: user.name, jobs: rows.map(out), settings: { closeDays: user.close_days, backup: await hasBackup(user.id) },
       google: { available: G.configured(), connected: !!user.refresh_enc, email: user.google_email, lastSync: user.last_sync, importing: !!user.import_state, ai: hasKey() },
+      stepsLeft: user.import_state ? 0 : await ST.stepsLeft(user),
     });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
@@ -126,6 +128,11 @@ module.exports = A.handle(async (req, res) => {
     const { rowCount } = await q('update jobs set co=$3, role=$4, link=$5, contact=$6, updated_at=now() where id=$1 and user_id=$2', [+b.id, user.id, co, role, cleanLink(b.link) || null, cleanContact(b.contact) || null]);
     if (!rowCount) throw err(404, 'Job not found.');
     return res.status(200).json({ ok: true, v: await version(user.id) });
+  }
+  if (b.op === 'order') {
+    // Claude puts one job's steps in order (reads that job's emails and invites, read only).
+    if (user.import_state) return res.status(200).json({ left: 0, wait: true });
+    return res.status(200).json(await ST.orderNext(user));
   }
   if (b.op === 'merge') {
     await J.merge(user, b.from, b.into);

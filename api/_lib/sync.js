@@ -93,7 +93,7 @@ async function applyEvent(user, ev, jobs) {
   }
   if (ev.kind === 'canceled') { tl = tl.filter(notUpcoming); next = null; }
   tl.sort((a, b) => labelDate(b[0], now) - labelDate(a[0], now));
-  const { rows } = await q(`update jobs set status=$2, applied=$3, first_reply=$4, next_raw=$5, tl=$6, updated_at=now() where id=$1 returning *`,
+  const { rows } = await q(`update jobs set status=$2, applied=$3, first_reply=$4, next_raw=$5, tl=$6, steps_at=null, updated_at=now() where id=$1 returning *`,
     [j.id, status, applied, firstReply, next, JSON.stringify(tl.slice(0, 40))]);
   Object.assign(j, rows[0]);
   return j;

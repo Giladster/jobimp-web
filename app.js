@@ -19,7 +19,7 @@ const DEMO_ALERTS=[
  {id:'a7',co:'Taboola',role:'Product Manager, Ads',loc:'Tel Aviv',hrs:52,src:'AllJobs',tag:'new'},
 ];
 const DEMO_RECS=[{id:'r1',co:'Monday.com',label:'1st round with Noa',date:'Nov 12',mins:42,score:74}];
-let jobs=[],alerts=[],recordings=[],REAL=false,REPLY={},ME='',GOOGLE={},VER='',SETTINGS={closeDays:16};
+let STEPS_LEFT=0,jobs=[],alerts=[],recordings=[],REAL=false,REPLY={},ME='',GOOGLE={},VER='',SETTINGS={closeDays:16};
 const DEMO_REPLY={Wix:[4,6,8],Riskified:[3,5,7],'Monday.com':[2,4,6],Playtika:[8,12,16],Gong:[5,9,13],Lemonade:[3,6,9],Fiverr:[3,5,8],Similarweb:[3,5,7]};
 let tlMode='Timeline';
 let view='today',jobsMode='list',jobTab='applied',srcTab='All',curJob=null,scope='main',recMode=0;
@@ -200,7 +200,7 @@ const dlab=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
 function jobSteps(j){
   // Same day: earlier stages first (an HR call before the manager interview), small updates after the step.
   const rk=s=>s==null?99:s==='?'?2.5:STEPS.indexOf(s);
-  const ev=j.tl.map((t,k)=>({t,k,d:tlDate(t[0]),s:stepOf(t)})).filter(e=>e.d).sort((a,b)=>a.d-b.d||rk(a.s)-rk(b.s)||b.k-a.k);
+  const ev=j.tl.map((t,k)=>({t,k,d:t[2]?.d?new Date(t[2].d+'T00:00:00'):tlDate(t[0]),s:stepOf(t)})).filter(e=>e.d).sort((a,b)=>a.d-b.d||rk(a.s)-rk(b.s)||b.k-a.k);
   const g=[];let cur=null;const pre=[];
   for(const e of ev){
     let s=e.s;if(s==='?')s=g.some(x=>x.s!=='applied')?'manager':'hr';
@@ -232,7 +232,7 @@ function stepForm(t,del){
 function readStep(old){
   const t=$('#spT').value,ds=$('#spD').value;const d=ds?new Date(ds+'T00:00:00'):TODAY;
   const x=$('#spX').value.trim()||(t==='-'?'Update':STEPL[t]);
-  const m={...(old?.[2]||{s:'you',id:''}),t};return [dlab(d),x,m];
+  const m={...(old?.[2]||{s:'you',id:''}),t};if(m.s!=='you')m.u=1;delete m.d;return [dlab(d),x,m];
 }
 function sortTl(j){j.tl0.sort((a,b)=>(tlDate(b[0])||0)-(tlDate(a[0])||0))}
 function afterStepEdit(j,msg){refreshTime();saveJob(j);render();toast(msg)}
@@ -253,7 +253,7 @@ function editGroup(j,i){
   openModal(`Edit ${x.name} step`,`<div class="edf"><label>Step<select id="sgT">${STEPS.map(v=>`<option value="${v}"${v===x.s?' selected':''}>${STEPL[v]}</option>`).join('')}</select></label>
     <div class="hint">Changes all ${x.items.length} items in this step. Use the pencil on a single item to change its name or date.</div>
     <button class="pbtn pri" id="sgSave">Save</button><button class="link danger" id="sgDel">Remove this step</button></div>`);
-  $('#sgSave').onclick=()=>{const v=$('#sgT').value;x.items.forEach(e=>{const t=tl[e.k];if(t&&stepOf(t))t[2]={...(t[2]||{s:'you',id:''}),t:v}});if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Saved')};
+  $('#sgSave').onclick=()=>{const v=$('#sgT').value;x.items.forEach(e=>{const t=tl[e.k];if(t&&stepOf(t)){t[2]={...(t[2]||{s:'you',id:''}),t:v};if(t[2].s!=='you')t[2].u=1}});if(!REAL)j.tl=tl;closeModal();afterStepEdit(j,'Saved')};
   $('#sgDel').onclick=()=>{const ks=new Set(x.items.map(e=>e.k));const keep=tl.filter((t,k)=>!ks.has(k));tl.length=0;tl.push(...keep);if(!REAL)j.tl=tl;stepSel={id:j.id,i:null};closeModal();afterStepEdit(j,'Step removed')};
 }
 // Board "by step": dragging a card moves the job to that step today ("Moved to X by you").
@@ -603,6 +603,11 @@ async function linkOldMail(){if(linking||!GOOGLE.connected||store.get('jobimp-li
       let r;try{r=await api('/api/agent',{op:'linkold'})}catch(x){if(x.status===429){await sleep(30e3);continue}throw x}
       if(r.wait)break;if(!r.left){store.set('jobimp-linked-v1','1');break}await sleep(1500)}
     await pull(true)}catch{}finally{linking=false}}
+// Claude puts each job's steps in order (all its emails together). Runs for jobs it has not done yet, one at a time.
+let ordering=false;
+async function orderSteps(){if(ordering||!GOOGLE.connected||importing||!(STEPS_LEFT>0))return;ordering=true;
+  try{for(let i=0;i<300;i++){let r;try{r=await api('/api/jobs',{op:'order'})}catch(x){if(x.status===429){await sleep(30e3);continue}throw x}
+      if(r.wait)break;if(i%3===2||!r.left)await pull(true);if(!r.left)break;await sleep(800)}}catch{}finally{ordering=false;STEPS_LEFT=0}}
 async function afterChange(d){if(!d.changed)return;await pull(true);setTimeout(()=>showChanges(d.changes),60)}
 const amode=()=>AMODE||(AMODE=store.get('jobimp-agent-mode')==='auto'?'auto':'plan');
 function undoBtn(id){return id?`<div class="acts"><button class="act" data-aundo="${id}">Undo</button></div>`:''}
@@ -699,7 +704,7 @@ const fmt=d=>dt(d).toLocaleDateString('en-US',{month:'short',day:'numeric'});
 const daysBetween=(a,b)=>Math.round((dt(b)-dt(a))/DAY);
 const median=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
 function loadReal(data){
-  REAL=true;alerts=[];recordings=[];ME=data.name||'You';GOOGLE=data.google||{};VER=data.v||'';SETTINGS=data.settings||SETTINGS;
+  REAL=true;alerts=[];recordings=[];ME=data.name||'You';GOOGLE=data.google||{};VER=data.v||'';STEPS_LEFT=data.stepsLeft||0;SETTINGS=data.settings||SETTINGS;
   const iso=localIso(TODAY);
   jobs=data.jobs.map((j,i)=>({id:j.id??i+1,co:j.co,role:j.role,loc:j.loc||'',src:j.src||'Email',status:j.status,next:null,nextRaw:j.next||null,
     applied:j.applied,firstReply:j.firstReply,tl0:j.tl.map(t=>[...t]),tl:j.tl.map(t=>[...t]),link:j.link||'',contact:j.contact||'',
@@ -849,7 +854,7 @@ async function openReal(){
   const d=await api('/api/jobs');loadReal(d);startApp();
   try{api('/api/jobs',{op:'tz',tz:Intl.DateTimeFormat().resolvedOptions().timeZone})}catch{}
   loadCleared();
-  if(GOOGLE.importing&&GOOGLE.ai!==false)runImport();else linkOldMail();
+  if(GOOGLE.importing&&GOOGLE.ai!==false)runImport();else{linkOldMail();orderSteps()}
 }
 $('#login').addEventListener('click',async e=>{
   if(e.target.closest('[data-acc="demo"]')){if($('#rem').checked)store.set('jobimp-account','demo');loadDemo();startApp();return}
@@ -919,7 +924,7 @@ async function runImport(){
   }
   if(ok)toast('Done reading your Gmail and calendar');
   importing=false;await pull(true);renderGoogle();
-  if(ok)linkOldMail();
+  if(ok){linkOldMail();orderSteps()}
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function pull(force,fresh){
@@ -931,7 +936,7 @@ async function pull(force,fresh){
     loadReal(d);jobTab=keepTab;
     if(keepView==='job'){curJob=jobs.find(j=>j.id===keepJob)||null;view=curJob?'job':'jobs'}else view=keepView;
     render();renderGoogle();$('#main').scrollTop=keep;
-    if(GOOGLE.importing&&GOOGLE.ai!==false&&!importing)runImport();
+    if(GOOGLE.importing&&GOOGLE.ai!==false&&!importing)runImport();else orderSteps();
   }catch(x){if(x.status===401){signOut();showLogin()}}
 }
 // Check for news every 20 s while the app is open (asks Gmail directly every 2 min, in case a ping was missed).
