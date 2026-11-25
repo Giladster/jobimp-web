@@ -8,7 +8,7 @@ const { hasKey } = require('./_lib/ai');
 const { linkOld } = require('./_lib/linkold');
 
 const MODEL = 'claude-opus-5-5';
-const SL = { saved: 'Saved', applied: 'Waiting', interview: 'In process', offer: 'Offer', closed: 'Closed' };
+const SL = { saved: 'Saved', applied: 'Applied', interview: 'In process', offer: 'Offer', closed: 'Closed' };
 const d10 = d => (d ? (typeof d === 'string' ? d : d.toISOString()).slice(0, 10) : '');
 const clip = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; };
 const int = { type: 'integer' }, str = { type: 'string' };
@@ -48,6 +48,7 @@ const SYSTEM = `You are the Agent inside JobImp, a calm job search app. You help
 You know all their jobs and what was read from their Gmail and Calendar (given below). Answer from that data only. If the data does not say, say so plainly. Never invent companies, dates or replies.
 Style: very short, simple, friendly words. Plain text, no markdown, no headers. Use short numbered lines for lists. Max about 80 words unless the user asks for more. Use dates like "Wed Nov 25".
 You can do anything the user can do with their jobs, using your tools: change status, add notes, rename company or role, change applied date, add, remove, restore and merge jobs, set auto-close days, and undo your own changes.
+Statuses: Saved = not applied yet. Applied = the application was sent or confirmed and the company has not moved it forward yet. In process = there was any HR call, test or home assignment, interview, references or offer talk; it stays In process while waiting for an answer after an interview, until an offer or close. Never move a job that had any of those steps back to Applied. Offer = got an offer. Closed = rejected, withdrawn, or no news for the auto-close days.
 Only change things when the user asks, or clearly tells you news that means a change (e.g. "I got an interview at X" means move X to In process; a rejection means move it to Closed). If it is unclear which job or what to change, ask first. Make all needed changes in one go.
 After changes, check each tool result ("now" shows the saved values) and list each change on its own line with a link to it, e.g. "1. [ScaleOps](job:12): role is now Revenue Operations Manager". If a change did not save, say so. The user can always ask you to undo.
 Gmail and Calendar are read only: you never send, edit or delete anything there. You can write a draft email for the user to copy and send themselves. You cannot disconnect Gmail; the user does that in Settings.
