@@ -198,6 +198,9 @@ const dlab=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
 // Group the timeline into steps, oldest first. Repeats in a row join one step ("Manager ×3"); small updates ride along with the step before them.
 function jobSteps(j){
   const ev=j.tl.map((t,k)=>({t,k,d:tlDate(t[0]),s:stepOf(t)})).filter(e=>e.d).sort((a,b)=>a.d-b.d||b.k-a.k);
+  // One day = one step: the same interview can come as an email and a calendar invite tagged differently; keep the earlier stage.
+  const low={};for(const e of ev){const r=BSTEPS.indexOf(e.s);if(r<0||e.t[2]?.s==='you')continue;const k=+e.d;if(low[k]==null||r<low[k])low[k]=r}
+  for(const e of ev){const r=low[+e.d];if(r!=null&&e.t[2]?.s!=='you'&&(e.s==='?'||BSTEPS.includes(e.s)))e.s=BSTEPS[r]}
   const g=[];let cur=null;const pre=[];
   for(const e of ev){
     let s=e.s;if(s==='?')s=g.some(x=>x.s!=='applied')?'manager':'hr';
@@ -264,13 +267,15 @@ function setStep(j,s){
 }
 
 /* why a job is closed: from its timeline */
+const REJECT=/reject|turned (you )?down|not moving forward|not move forward|other candidates/i;
 function closedWhy(j){
   if(j.status!=='closed')return '';
-  for(const t of j.tl){const x=String(t[1]);
-    if(/no news for/i.test(x))return 'No reply';
-    if(/reject|not move forward|other candidates/i.test(x))return 'Rejected';
-    if(/withdr/i.test(x))return 'You withdrew';
-    if(/^closed$/i.test(x))return 'Closed by you';}
+  // A rejection always wins over "no reply", whatever the order.
+  const has=r=>j.tl.some(t=>r.test(String(t[1])));
+  if(has(REJECT))return 'Rejected';
+  if(has(/withdr/i))return 'You withdrew';
+  if(has(/no news for/i))return 'No reply';
+  if(has(/^closed$/i))return 'Closed by you';
   return 'Closed';
 }
 const IC_EDIT='<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>';

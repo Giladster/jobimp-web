@@ -69,6 +69,8 @@ module.exports = A.handle(async (req, res) => {
       const { rows: c } = await q('select count(*)::int as n from ai_log where user_id=$1', [user.id]);
       return res.status(200).json({ log: rows, total: c[0].n });
     }
+    // A rejection always wins over "no news", for old and new jobs alike.
+    try { await S.rejectWins(user); } catch (e) { console.error('reject rule failed', e.message); }
     try { await S.autoClose(user); } catch (e) { console.error('auto close failed', e.message); }
     // Older Gmail pings covered the Inbox only: switch them to Inbox + Sent once.
     if (user.refresh_enc && user.watch_v < 2) {

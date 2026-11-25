@@ -101,7 +101,29 @@ async function applyEvent(user, ev, jobs) {
 
 /* ---------- auto-close: no news for X days (user setting) -> Closed ---------- */
 // Steps that end a process: the app's own "Closed" note, or a rejection.
-const ENDS = /^Closed\b|reject|turned (you )?down|not moving forward/i;
+// One shared rule (the app uses the same words): a rejection always wins over "no news".
+const REJECT = /reject|turned (you )?down|not moving forward|not move forward|other candidates/i;
+const ENDS = new RegExp('^Closed\\b|' + REJECT.source, 'i');
+const NONEWS = /^Closed: no news/i;
+
+// Jobs with a rejection: drop any "no news" close and keep them closed (also fixes older lists).
+async function rejectWins(user) {
+  const { rows } = await q(`select id, status, tl from jobs where user_id=$1 and not removed`, [user.id]);
+  let n = 0;
+  for (const j of rows) {
+    const tl = Array.isArray(j.tl) ? j.tl : [];
+    if (!tl.some(e => REJECT.test(String(e[1])))) continue;
+    const kept = tl.filter(e => !NONEWS.test(String(e[1])));
+    // Close it when the rejection is the latest news (or it was already closed).
+    const now = new Date();
+    const newest = kept.filter(e => !/^Closed\b/.test(String(e[1]))).map(e => [labelDate(e[0], now), e]).filter(x => x[0]).sort((a, b) => b[0] - a[0])[0];
+    const status = j.status === 'closed' || (newest && REJECT.test(String(newest[1][1]))) ? 'closed' : j.status;
+    if (kept.length === tl.length && status === j.status) continue;
+    await q(`update jobs set status=$2, next_raw=case when $2='closed' then null else next_raw end, tl=$3, updated_at=now() where id=$1`, [j.id, status, JSON.stringify(kept)]);
+    n++;
+  }
+  return n;
+}
 
 async function autoClose(user) {
   const days = +user.close_days; if (!(days > 0)) return 0;
@@ -402,4 +424,4 @@ async function restore(user) {
   return rows[0].data.length;
 }
 
-module.exports = { rebuild, restore, norm, labelDate, autoClose, importStep, catchUp, startWatches, processEvents, applyEvent, nextRaw, fromLocal, label };
+module.exports = { REJECT, ENDS, rejectWins, rebuild, restore, norm, labelDate, autoClose, importStep, catchUp, startWatches, processEvents, applyEvent, nextRaw, fromLocal, label };
