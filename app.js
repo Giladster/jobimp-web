@@ -677,7 +677,7 @@ document.addEventListener('click',e=>{
   const c=b.dataset.cmd;
   if(c.startsWith('link:')){openALink(c.slice(5));return}
   if(c.startsWith('go:')){const[,what,arg]=c.split(':');
-    if(what==='alerts')show('alerts');else if(what==='insights')showInsights(recordings[0]);else if(what==='open')openJob(+arg);
+    if(what==='alerts')show('alerts');else if(what==='jobs'||what==='settings')show(what);else if(what==='insights')showInsights(recordings[0]);else if(what==='open')openJob(+arg);
     return}
   handle(c,b.closest('#page')&&view!=='job'?'main':scope);
 });
@@ -745,18 +745,61 @@ function realNudge(j){
   return 'Ask me anything about this job.';
 }
 function kpi(l,v,d){return`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`}
+let ATT_ALL=false;
+// This week: calendar events for the next 7 days (one upcoming event per job, from Gmail and calendar)
+function weekEvents(){
+  const end=new Date(TODAY.getTime()+7*DAY),out=[];
+  jobs.forEach(j=>{const at=parseNext(j.nextRaw);if(!at||at<TODAY||at>=end||j.status==='closed')return;
+    const t=(j.tl0||j.tl).find(x=>/\(coming up\)/.test(x[1]));const s=t&&stepOf(t);
+    out.push({j,at,what:s&&STEPL[s]&&s!=='applied'?STEPL[s]+(s==='test'?'':' interview'):'Interview'})});
+  return out.sort((a,b)=>a.at-b.at);
+}
+function nextAfterWeek(){
+  const end=new Date(TODAY.getTime()+7*DAY);let best=null;
+  jobs.forEach(j=>{const at=parseNext(j.nextRaw);if(at&&at>=end&&j.status!=='closed'&&(!best||at<best.at))best={j,at}});return best;
+}
 function renderTodayReal(){
   const S=realStats(),att=attentionList();
   const notes=notifList().filter(i=>!CLEARED.has(i.key)),atts=att.map(a=>({kind:'att',key:'a:'+a[0],text:a[0],link:/^go:open:/.test(a[1])?'job:'+a[1].split(':')[2]:'',cmd:a[1],sub:'Open the job'})).filter(i=>!CLEARED.has(i.key));
   setTimeout(()=>markSeen([...notes,...atts]),0);
-  const nx=S.inter.find(j=>j.next);
-  $('#page').innerHTML=`<div class="hero"><div class="d">${TODAY.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}${bellHtml(notes)}</div><h2>Hi, Gilad.</h2><p>Your real job search, from Gmail and calendar.</p></div>
-  <div class="kpis">${kpi('In interviews',S.inter.length,nx?esc(nx.co)+' '+esc(nx.next.split(',')[0]):'')}${kpi('Waiting on reply',S.waiting.length,'No answer yet')}
-  ${kpi('Reply rate',S.rate+'%',`${S.ap.filter(j=>j.firstReply).length} of ${S.ap.length} applications`)}${kpi('Days to reply',S.med??'–','Median')}</div>
-  <div class="grid2"><div>${todaySection('att','Needs attention',atts,'Nothing urgent.')}</div>
-  <div><div class="lbl">Where you stand</div>${legend}${S.waiting.filter(j=>j.days!=null).sort((a,b)=>a.days-b.days).map(j=>track(j)).join('')}${axis}
-  <div class="foot">Band = when companies usually answered you.</div></div></div>`;
+  const first=(ME||'').split(/\s+/)[0]||'there';
+  // This week
+  const ev=weekEvents(),hm=d=>d.toTimeString().slice(0,5);
+  let week;
+  if(ev.length){
+    week='<div class="wk">';
+    for(let i=0;i<7;i++){const d=new Date(TODAY.getTime()+i*DAY),ds=d.toDateString();
+      week+=`<div class="wday${i===0?' on':''}"><div class="wdh"><span>${i===0?'Today':d.toLocaleDateString('en-US',{weekday:'short'})}</span><b>${d.getDate()}</b></div>`+
+      ev.filter(e=>e.at.toDateString()===ds).map(e=>`<button class="wev" data-cmd="go:open:${e.j.id}" title="${esc(e.j.co+' · '+e.what+' · '+hm(e.at))}"><b>${hm(e.at)}</b><em>${esc(e.j.co)}</em><span>${esc(e.what)}</span></button>`).join('')+'</div>'}
+    week+='</div>';
+  }else{
+    const nx=nextAfterWeek();
+    week=`<div class="wempty"><div class="wet">Nothing scheduled this week.</div><div class="t2">${nx?`Next: ${esc(nx.j.co)}, ${nx.at.toLocaleDateString('en-US',{month:'short',day:'numeric'})}.`:'No interviews coming up yet.'}</div></div>`;
+  }
+  // Needs attention: top 3, one main button each
+  const btn=t=>/interview (Today|Tomorrow)/.test(t)?['Prep',1]:/interview /.test(t)?['Open',0]:/quiet|Follow up/.test(t)?['Follow up',0]:/no reply/.test(t)?['Open',0]:/done .*Waiting/.test(t)?['Open',0]:['Open',0];
+  // Interviews later this week already show in This week; keep only today/tomorrow here (prep).
+  const attsT=atts.filter(i=>!(/ interview /.test(i.text)&&/ in \d+ days$/.test(i.text)));
+  const shown=ATT_ALL?attsT:attsT.slice(0,3);shown.forEach(i=>TITEMS[i.key]=i);
+  const attH=shown.map(i=>{const [l,p]=btn(i.text);return`<div class="rowx tw"><button class="twr" data-cmd="${esc(i.cmd)}"><div class="t1">${esc(i.text)}</div></button><button class="tbtn${p?' p':''}" data-cmd="${esc(i.cmd)}">${l}</button><button class="xclr" data-clr="${esc(i.key)}" data-tip="Clear" aria-label="Clear">${I('<path d="M6 6l12 12M18 6L6 18"/>')}</button></div>`}).join('')||'<div class="empty sm">Nothing urgent.</div>';
+  const newH=notes.slice(0,3).map(n=>`<button class="tnew" data-cmd="link:${esc(n.link)}"><i class="${n.bad?'bad':''}"></i><div class="txt"><div class="t1">${esc(n.text)}</div><div class="t2">${esc(n.sub)}</div></div></button>`).join('')||'<div class="empty sm">Nothing new.</div>';
+  // My jobs
+  const cnt=s=>jobs.filter(j=>j.status===s).length,cd=SETTINGS.closeDays||0;
+  const soon=cd?jobs.filter(j=>(j.status==='applied'||j.status==='interview')&&!j.next&&j.tl[0]&&(()=>{const d=tlDate(j.tl[0][0]);if(!d)return false;const n=Math.round((TODAY-d)/DAY);return n>=cd-2&&n<cd})()).length:0;
+  $('#page').innerHTML=`<div class="hero"><div class="d">${TODAY.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}${bellHtml(notes)}</div><h2>Hi, ${esc(first)}.</h2></div>
+  <div class="tdash">
+  <section class="tw-card"><div class="twl"><span>This week</span></div>${week}</section>
+  <div class="tw-two">
+    <section class="tw-card"><div class="twl"><span>Needs attention${attsT.length?` · ${attsT.length}`:''}</span>${attsT.length>3?`<button class="link" data-attall>${ATT_ALL?'Show less':'See all '+attsT.length}</button>`:''}</div><div class="list" data-sec="att">${attH}</div></section>
+    <section class="tw-card"><div class="twl"><span>What's new</span><button class="link" data-bell>All notifications</button></div><div class="list">${newH}</div></section>
+  </div>
+  <section class="tw-card"><div class="twl"><span>My jobs</span><button class="link" data-cmd="go:jobs">Open My jobs</button></div>
+    <div class="tjobs"><div><b>${cnt('applied')}</b><span><i style="background:var(--s-applied)"></i>Applied</span></div><div><b>${cnt('interview')}</b><span><i style="background:var(--s-interview)"></i>In process</span></div><div><b>${cnt('offer')}</b><span><i style="background:var(--s-offer)"></i>Offers</span></div><div><b>${S.rate}%</b><span>Reply rate · ${S.ap.filter(j=>j.firstReply).length} of ${S.ap.length}</span></div></div>
+    ${cd?`<div class="t2 tfoot">${soon?`${soon} job${soon>1?'s':''} will close soon (no news for ${cd} days). `:`Jobs with no news for ${cd} days close automatically. `}<button class="link" data-cmd="go:settings">Settings</button></div>`:''}
+  </section>
+  </div>`;
 }
+document.addEventListener('click',e=>{if(e.target.closest('[data-attall]')){ATT_ALL=!ATT_ALL;render()}});
 /* Today: notifications (news from your email and calendar), clear buttons, and history */
 let CLEARED=new Set();const SEEN=new Set(),TITEMS={};
 const MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
