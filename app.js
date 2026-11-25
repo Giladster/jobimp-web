@@ -35,7 +35,7 @@ function toast(t,undo){const el=$('#toast');el.innerHTML=esc(t)+(undo?' <button 
 
 /* navigation */
 function show(v,keepScope){
-  view=v;closeModal();if(v==='settings'){LOGST.open=false;LOGST.rows=null;ALOG.open=false;ALOG.rows=null}
+  view=v;closeModal();NOPEN=false;if(v==='settings'){LOGST.open=false;LOGST.rows=null;ALOG.open=false;ALOG.rows=null}
   document.querySelectorAll('.nv').forEach(b=>b.classList.toggle('on',b.dataset.v===(v==='job'?'jobs':v==='history'?'today':v)));
   $('#main').scrollTop=0;
   if(!keepScope)setScope(v==='job'?'j'+curJob.id:'main');
@@ -474,7 +474,7 @@ document.addEventListener('mouseover',e=>{
   const w=tipEl.offsetWidth,h=tipEl.offsetHeight;let x=r.left+r.width/2-w/2,y=r.bottom+8;
   if(y+h>innerHeight-8)y=r.top-h-8;x=Math.max(8,Math.min(innerWidth-w-8,x));
   if(el.closest('.side')&&$('.app').classList.contains('lcol')){x=r.right+10;y=r.top+r.height/2-h/2}
-  tipEl.style.left=x+'px';tipEl.style.top=y+'px';requestAnimationFrame(()=>tipEl.classList.add('on'));
+  tipEl.style.left=x+'px';tipEl.style.top=y+'px';requestAnimationFrame(()=>{if(tipFor===el)tipEl.classList.add('on')});
 });
 document.addEventListener('mousedown',()=>{tipEl.classList.remove('on');tipFor=null});
 /* collapse / expand the left menu and the Agent (remembered) */
@@ -719,10 +719,10 @@ function renderTodayReal(){
   const notes=notifList().filter(i=>!CLEARED.has(i.key)),atts=att.map(a=>({kind:'att',key:'a:'+a[0],text:a[0],link:/^go:open:/.test(a[1])?'job:'+a[1].split(':')[2]:'',cmd:a[1],sub:'Open the job'})).filter(i=>!CLEARED.has(i.key));
   setTimeout(()=>markSeen([...notes,...atts]),0);
   const nx=S.inter.find(j=>j.next);
-  $('#page').innerHTML=`<div class="hero"><div class="d">${TODAY.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}<button class="link histl" data-hist data-tip="Everything that showed up here, including cleared items">History</button></div><h2>Hi, Gilad.</h2><p>Your real job search, from Gmail and calendar.</p></div>
+  $('#page').innerHTML=`<div class="hero"><div class="d">${TODAY.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}${bellHtml(notes)}</div><h2>Hi, Gilad.</h2><p>Your real job search, from Gmail and calendar.</p></div>
   <div class="kpis">${kpi('In interviews',S.inter.length,nx?esc(nx.co)+' '+esc(nx.next.split(',')[0]):'')}${kpi('Waiting on reply',S.waiting.length,'No answer yet')}
   ${kpi('Reply rate',S.rate+'%',`${S.ap.filter(j=>j.firstReply).length} of ${S.ap.length} applications`)}${kpi('Days to reply',S.med??'–','Median')}</div>
-  <div class="grid2"><div>${todaySection('note','Notifications',notes,'Nothing new.')}${todaySection('att','Needs attention',atts,'Nothing urgent.')}</div>
+  <div class="grid2"><div>${todaySection('att','Needs attention',atts,'Nothing urgent.')}</div>
   <div><div class="lbl">Where you stand</div>${legend}${S.waiting.filter(j=>j.days!=null).sort((a,b)=>a.days-b.days).map(j=>track(j)).join('')}${axis}
   <div class="foot">Band = when companies usually answered you.</div></div></div>`;
 }
@@ -740,9 +740,25 @@ function notifList(){
   return out.sort((a,b)=>b.d-a.d).slice(0,10);
 }
 const IC_BELL='<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',IC_CLOCK='<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>';
-function todaySection(kind,title,items,empty){
+/* bell: notifications in a small panel at the top right of Today */
+let NOPEN=false;
+const readSet=()=>{try{return new Set(JSON.parse(store.get('jobimp-notes-read')||'[]'))}catch{return new Set()}};
+function bellHtml(notes){
+  const rd=readSet(),fresh=notes.filter(n=>!rd.has(n.key)).length;
+  return `<div class="bellw"><button class="bell${NOPEN?' on':''}" data-bell data-tip="Notifications" aria-label="Notifications" aria-expanded="${NOPEN}">${I(IC_BELL)}${fresh?`<span class="bdot">${fresh}</span>`:''}</button>
+    <div class="npanel${NOPEN?' open':''}" role="dialog" aria-label="Notifications"><div class="nph"><span class="t1">Notifications</span><span class="npa">${notes.length>1?'<button class="link" data-clrall="note">Clear all</button>':''}<button class="link" data-hist>History</button></span></div>
+    <div class="npl">${todaySection('note','',notes,'Nothing new.',true)}</div></div></div>`;
+}
+function setBell(on){NOPEN=on;const w=$('.bellw');if(!w)return;w.querySelector('.bell').classList.toggle('on',on);w.querySelector('.bell').setAttribute('aria-expanded',on);w.querySelector('.npanel').classList.toggle('open',on);
+  if(on){const keys=Object.values(TITEMS).filter(i=>i.kind==='note').map(i=>i.key);store.set('jobimp-notes-read',JSON.stringify([...new Set([...readSet(),...keys])].slice(-300)));const d=w.querySelector('.bdot');if(d)d.remove()}}
+document.addEventListener('click',e=>{
+  if(e.target.closest('[data-bell]')){setBell(!NOPEN);return}
+  if(NOPEN&&!e.target.closest('.npanel'))setBell(false);
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&NOPEN)setBell(false)});
+function todaySection(kind,title,items,empty,bare){
   items.forEach(i=>TITEMS[i.key]=i);
-  return `<div class="lblrow"><div class="lbl">${title}</div>${items.length>1?`<button class="link clrall" data-clrall="${kind}">Clear all</button>`:''}</div>
+  return `${bare?'':`<div class="lblrow"><div class="lbl">${title}</div>${items.length>1?`<button class="link clrall" data-clrall="${kind}">Clear all</button>`:''}</div>`}
   <div class="list" data-sec="${kind}">${items.map(i=>`<div class="rowx${i.bad?' bad':''}">${hrow(kind==='note'?IC_BELL:IC_CLOCK,esc(i.text),esc(i.sub),i.cmd||'link:'+i.link)}<button class="xclr" data-clr="${esc(i.key)}" data-tip="Clear" aria-label="Clear">${I('<path d="M6 6l12 12M18 6L6 18"/>')}</button></div>`).join('')||`<div class="empty sm">${empty}</div>`}</div>`;
 }
 const pack=i=>({key:i.key,kind:i.kind,text:i.text,link:i.link||''});

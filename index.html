@@ -51,8 +51,20 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6;stro
 .lblrow{display:flex;align-items:baseline;justify-content:space-between}
 .lblrow .clrall{font-size:13.2px;color:var(--faint)}
 .lblrow .clrall:hover{color:var(--ink)}
-.histl{float:right;font-size:13.8px;color:var(--faint)}
-.histl:hover{color:var(--ink)}
+.hero{position:relative}
+.bellw{position:absolute;top:-6px;right:0;z-index:20}
+.bell{position:relative;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;color:var(--muted);transition:color .2s,background .2s}
+.bell:hover,.bell.on{color:var(--ink);background:var(--surface)}
+.bell svg.i{width:19px;height:19px}
+.bdot{position:absolute;top:3px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--accent);color:var(--accent-ink);font-size:10.5px;font-weight:600;display:grid;place-items:center;line-height:1}
+.npanel{color:var(--ink);font-size:15.5px;font-weight:400;letter-spacing:normal;text-transform:none;text-align:left;position:absolute;top:44px;right:0;width:380px;max-width:calc(100vw - 32px);max-height:60vh;overflow-y:auto;background:var(--surface);border-radius:16px;box-shadow:0 0 0 1px var(--line),0 24px 60px -20px rgba(0,0,0,.85);padding:6px 18px 8px;opacity:0;transform:translateY(-6px) scale(.98);transform-origin:top right;visibility:hidden;transition:opacity .2s ease,transform .24s cubic-bezier(.2,.8,.2,1),visibility 0s .24s}
+.npanel.open{opacity:1;transform:none;visibility:visible;transition:opacity .2s ease,transform .24s cubic-bezier(.2,.8,.2,1)}
+.nph{display:flex;justify-content:space-between;align-items:center;padding:10px 0 6px;position:sticky;top:-6px;background:var(--surface);z-index:1}
+.npa{display:flex;gap:14px;font-size:13.2px}
+.npa .link{color:var(--faint)}
+.npa .link:hover{color:var(--ink)}
+.npl .row{padding-top:12px;padding-bottom:12px}
+.npl .list .rowx:last-child .row{border-bottom:0}
 .rowx{position:relative;overflow:hidden}
 .rowx .row{padding-right:64px}
 .rowx.bad .t1{color:var(--s-closed)}
